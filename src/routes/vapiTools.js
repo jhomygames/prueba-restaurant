@@ -58,7 +58,8 @@ router.post("/vapi/tools", async (req, res) => {
         console.error(`[vapiTools] error ejecutando ${name}:`, err);
         return {
           toolCallId: call.id,
-          result: JSON.stringify({ error: "tool_execution_failed" }),
+          // TODO-DEBUG: quitar err.message del payload antes de producción, es solo para diagnosticar el sandbox
+          result: JSON.stringify({ error: "tool_execution_failed", debug: err.message }),
         };
       }
     })
