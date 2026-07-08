@@ -24,9 +24,26 @@ con dos canales que comparten el mismo backend y las mismas herramientas:
   reservas directamente. Requiere `AIRTABLE_API_KEY` (Personal Access Token) y
   `AIRTABLE_BASE_ID` en `.env`. Supabase queda sin uso por ahora (se puede reintroducir si
   el proyecto escala más allá del sandbox).
+- **Base de Airtable creada (2026-07-08)**: Base ID `app4Q8A4HIcFRkFza` (nombre "Restaurant"),
+  tablas `Mesas` (id `tblZE4KibHlNAsqBb`, 6 mesas de ejemplo cargadas), `Reservas` (id
+  `tbl5P0DjU5QBcq2rk`), `Clientes` (id `tblBtVOq8l0fHb8kw`) — esquema exacto en
+  `AIRTABLE_SCHEMA.md`. Sigue existiendo la tabla de plantilla "Table 1" sin usar (no se
+  borró automáticamente, requiere confirmación explícita del usuario por ser irreversible).
+  Flujo completo probado en producción (Railway): check_availability, create_reservation y
+  cancel_reservation contra la base real, funcionando correctamente.
 - **Entorno actual**: sandbox de pruebas, no producción. El usuario ya tiene cuentas de
-  Twilio y Vapi. El siguiente paso de infraestructura es desplegar el backend en
-  Railway o Render (plan free) para tener una URL pública estable para los webhooks.
+  Twilio y Vapi.
+- **Deploy (actualizado 2026-07-08)**: backend desplegado en Railway, URL pública
+  `https://prueba-restaurant-production.up.railway.app`. Repo en
+  `https://github.com/jhomygames/prueba-restaurant`.
+- **Vapi Assistant creado vía API (2026-07-08)**: id `9311abda-3e54-4da5-b211-37406959505f`,
+  nombre "Recepcionista Restaurante (sandbox)". Modelo `claude-sonnet-4-6` (provider
+  `anthropic` — Vapi todavía no soporta el id `claude-sonnet-5`, ver lista de modelos
+  soportados si se necesita actualizar). Voz `11labs` (voiceId `21m00Tcm4TlvDq8ikWAM`,
+  modelo `eleven_multilingual_v2`), transcriber `deepgram nova-2` en español. Tools
+  apuntando a `/vapi/tools` del backend. Pendiente: asignar un número de teléfono al
+  assistant en Vapi (Vapi Phone Number o importar el número de Twilio) para poder recibir
+  llamadas reales.
 - **Automatizaciones**: híbrido Claude Code + Make.com. Toda la lógica de negocio vive en
   el backend (`src/routes/internalJobs.js`); Make.com solo actúa como "reloj" que dispara
   un HTTP POST por horario. Se decidió así para no depender de módulos frágiles de Make
