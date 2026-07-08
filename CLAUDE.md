@@ -44,7 +44,22 @@ con dos canales que comparten el mismo backend y las mismas herramientas:
   apuntando a `/vapi/tools` del backend.
 - **Número de teléfono asignado (2026-07-08)**: `+15623959059` (número gratuito de Vapi,
   provider `vapi`, id `fc4ba1ca-6517-427f-ad04-91d9db2b5f65`), ligado directo al assistant
-  de arriba. Puede tardar unos minutos en pasar de `activating` a `active` tras crearse.
+  de arriba. Probado con llamada real: funciona.
+- **Carta real cargada (2026-07-09)**: `menu.json` contiene la carta de la hamburguesería
+  del enlace Gourmeats del usuario (https://qr.gourmeatsapp.com/slider/beAcEQMYEFlZa1dSFJ2J),
+  con los 14 alérgenos asignados POR EJEMPLO según ingredientes típicos — el restaurante
+  debe validarlos antes de producción. La página es una SPA de Firestore; la carta se
+  extrajo con el navegador (la API bloquea scraping directo).
+- **Flujos reforzados (2026-07-09)**: recordatorios y reseñas idempotentes vía flags en
+  Airtable (`Recordatorio24h`, `Recordatorio1h`, `ResenaPedida` — checkboxes creados vía
+  Meta API en la tabla Reservas). Ventanas de recordatorio sin solape (24h → rango 20-25h;
+  1h → 0-1.25h). Las visitas se cuentan al completarse (job de reseñas), no por mensaje.
+  Prompts de voz y WhatsApp reescritos: fecha/hora actual inyectada ({{now}} en Vapi,
+  server-side en WhatsApp), confirmación de datos antes de reservar, protocolo estricto
+  de alérgenos, estilo específico por canal. Vapi además con turn-taking afinado
+  (startSpeakingPlan/stopSpeakingPlan) y voz con stability 0.5 / similarityBoost 0.75.
+  La voz concreta (voiceId) sigue siendo la default Rachel de 11labs: el usuario quiere
+  elegirla escuchándolas en dashboard.vapi.ai → Assistant → Voice.
 - **Automatizaciones**: híbrido Claude Code + Make.com. Toda la lógica de negocio vive en
   el backend (`src/routes/internalJobs.js`); Make.com solo actúa como "reloj" que dispara
   un HTTP POST por horario. Se decidió así para no depender de módulos frágiles de Make
