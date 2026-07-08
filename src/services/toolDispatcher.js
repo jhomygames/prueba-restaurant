@@ -30,8 +30,17 @@ async function dispatchTool(name, args, context = {}) {
     case "check_availability":
       return reservations.checkAvailability(args);
 
-    case "create_reservation":
-      return reservations.createReservation(args);
+    case "create_reservation": {
+      const result = await reservations.createReservation(args);
+      if (result.created) {
+        // Guarda/actualiza el cliente en Airtable para que quede en la memoria de
+        // clientes habituales, sin importar el canal (voz o WhatsApp).
+        await customerMemory
+          .upsertCustomer(args.customer_phone, { name: args.customer_name })
+          .catch((err) => console.error("[toolDispatcher] error guardando cliente:", err));
+      }
+      return result;
+    }
 
     case "cancel_reservation":
       return reservations.cancelReservation(args);
