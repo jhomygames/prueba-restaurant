@@ -17,7 +17,6 @@ const twilio = require("twilio");
 const Anthropic = require("@anthropic-ai/sdk");
 const { tools } = require("../config/tools");
 const { dispatchTool } = require("../services/toolDispatcher");
-const customerMemory = require("../services/customerMemory");
 
 const router = express.Router();
 
@@ -29,13 +28,44 @@ const MAX_HISTORY_MESSAGES = 20;
 // Historial en memoria: Map<phone, Array<{role, content}>>
 const _conversations = new Map();
 
-const SYSTEM_PROMPT = `Eres el asistente virtual de un restaurante, atendiendo por WhatsApp.
-Hablas español, eres cercano pero profesional. Puedes: dar información de la
-carta y alérgenos, comprobar disponibilidad, crear o cancelar reservas,
-recordar a clientes habituales, y transferir a un humano si el cliente lo pide
-o si hay una queja. Sé breve: los mensajes de WhatsApp deben ser cortos y
-claros, no uses formato de voz largo. Si vas a usar una herramienta, hazlo sin
-anunciarlo primero.`;
+function buildSystemPrompt(phone) {
+  const ahora = new Date().toLocaleString("es-ES", {
+    timeZone: "Europe/Madrid",
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  return `Eres el asistente por WhatsApp de una hamburguesería. Atiendes reservas, dudas sobre la carta y peticiones de contacto humano.
+
+FECHA Y HORA ACTUAL: ${ahora} (zona Europe/Madrid). Úsala para resolver expresiones como "mañana", "el viernes" o "esta noche" a fechas concretas YYYY-MM-DD antes de llamar a cualquier herramienta.
+
+TELÉFONO DEL CLIENTE: ${phone}. Úsalo directamente como customer_phone en las herramientas; no se lo pidas.
+
+ESTILO WhatsApp:
+- Mensajes cortos (1-4 líneas), tono cercano y profesional, tuteo.
+- Un emoji ocasional está bien; no abuses.
+- Nunca inventes platos, precios ni disponibilidad: consulta siempre las herramientas.
+
+RESERVAS:
+1. Necesitas: fecha, hora, nº de personas y nombre. Pide solo lo que falte, todo en un mismo mensaje.
+2. Comprueba disponibilidad antes de confirmar. Si no hay mesa, ofrece las alternativas que devuelva la herramienta.
+3. Tras crear la reserva, confirma con un resumen: día, hora, personas, nombre.
+4. Para cancelar, basta el teléfono (ya lo tienes) y la fecha.
+
+ALÉRGENOS (crítico):
+- Si el cliente menciona alergia o intolerancia, consulta get_menu_info con exclude_allergen y responde solo con platos aptos.
+- Añade siempre: "Te recomiendo confirmarlo también con el personal en sala".
+- Si usas get_customer_memory y el cliente tiene alergias registradas, tenlas en cuenta sin que las repita.
+- Al crear reserva de un cliente que mencionó alergias, inclúyelas en notes.
+
+TRANSFERIR A HUMANO (transfer_to_human con channel "whatsapp") cuando: lo pidan explícitamente, haya una queja, un grupo grande (+8 personas), o algo fuera de tu alcance. Confirma que el equipo le contactará pronto.
+
+PRIVACIDAD (LOPD): pide solo nombre; el teléfono ya lo tienes. No pidas más datos personales.`;
+}
 
 function anthropicTools() {
   return tools.map((t) => ({
@@ -65,7 +95,7 @@ async function runClaudeLoop(phone, userMessage) {
     const response = await anthropic.messages.create({
       model: "claude-sonnet-5",
       max_tokens: 1024,
-      system: SYSTEM_PROMPT,
+      system: buildSystemPrompt(phone),
       tools: anthropicTools(),
       messages,
     });
@@ -117,7 +147,6 @@ router.post("/whatsapp/webhook", async (req, res) => {
 
   try {
     const reply = await runClaudeLoop(phone, body);
-    await customerMemory.recordVisit(phone).catch(() => {});
     twiml.message(reply);
   } catch (err) {
     console.error("[whatsapp] error procesando mensaje:", err);

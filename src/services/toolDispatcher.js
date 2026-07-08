@@ -9,20 +9,49 @@ const customerMemory = require("./customerMemory");
 const { notifyStaff } = require("./transferToHuman");
 const menu = require("../config/menu.json");
 
-function getMenuInfo({ category, exclude_allergen }) {
+// Normaliza para comparar sin acentos ni mayúsculas ("Croquetas" ~ "croquetas", "César" ~ "cesar").
+function normalize(s) {
+  return String(s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+}
+
+function getMenuInfo({ category, exclude_allergen, dish_name }) {
   let categorias = menu.categorias;
+
   if (category) {
-    categorias = categorias.filter(
-      (c) => c.nombre.toLowerCase() === category.toLowerCase()
-    );
+    const target = normalize(category);
+    categorias = categorias.filter((c) => normalize(c.nombre).includes(target));
   }
+
+  if (dish_name) {
+    const target = normalize(dish_name);
+    categorias = categorias
+      .map((c) => ({
+        ...c,
+        platos: c.platos.filter((p) => normalize(p.nombre).includes(target)),
+      }))
+      .filter((c) => c.platos.length > 0);
+  }
+
   if (exclude_allergen) {
-    categorias = categorias.map((c) => ({
-      ...c,
-      platos: c.platos.filter((p) => !p.alergenos.includes(exclude_allergen)),
-    }));
+    const target = normalize(exclude_allergen);
+    const alergeno = menu.alergenos_catalogo.find((a) => normalize(a).includes(target));
+    categorias = categorias
+      .map((c) => ({
+        ...c,
+        platos: c.platos.filter((p) => !p.alergenos.includes(alergeno)),
+      }))
+      .filter((c) => c.platos.length > 0);
   }
-  return { categorias };
+
+  return {
+    categorias,
+    alergenos_catalogo: menu.alergenos_catalogo,
+    nota_alergenos:
+      "Alérgenos de ejemplo pendientes de validación por el restaurante. Ante alergias graves, recomendar siempre confirmarlo con el personal en sala.",
+  };
 }
 
 async function dispatchTool(name, args, context = {}) {

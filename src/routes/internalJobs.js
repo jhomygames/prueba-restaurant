@@ -12,6 +12,7 @@
 const express = require("express");
 const twilio = require("twilio");
 const reservations = require("../services/reservations");
+const customerMemory = require("../services/customerMemory");
 
 const router = express.Router();
 
@@ -46,37 +47,40 @@ async function sendWhatsApp(toPhone, body) {
 }
 
 // Revisa ambas ventanas (24h y 1h) en una sola ejecución, ya que Make Free
-// solo permite 2 escenarios simultáneos.
+// solo permite 2 escenarios simultáneos. Idempotente: cada reserva se marca
+// (Recordatorio24h / Recordatorio1h) tras el envío, así las ejecuciones de
+// Make cada 15 min no duplican mensajes. Las ventanas no se solapan: el
+// recordatorio de 24h solo aplica a reservas a más de 20h vista.
 router.post("/internal/reminders/run", requireInternalSecret, async (req, res) => {
   try {
     const [upcoming24h, upcoming1h] = await Promise.all([
-      reservations.getUpcomingReservations({ hoursAhead: 24 }),
-      reservations.getUpcomingReservations({ hoursAhead: 1 }),
+      reservations.getUpcomingReservations({ hoursAhead: 25, hoursFloor: 20 }),
+      reservations.getUpcomingReservations({ hoursAhead: 1.25 }),
     ]);
 
     const results = [];
 
-    for (const r of upcoming24h) {
+    for (const r of upcoming24h.filter((r) => !r.reminded_24h)) {
       const body =
-        `¡Hola ${r.customer_name}! Te recordamos tu reserva mañana ` +
+        `¡Hola ${r.customer_name}! Te recordamos tu reserva de mañana ` +
         `${r.date} a las ${r.time} para ${r.party_size} persona(s). ` +
         `Si necesitas cancelar o modificarla, responde a este mensaje.`;
-      results.push({
-        reservation_id: r.id,
-        window: "24h",
-        ...(await sendWhatsApp(r.customer_phone, body)),
-      });
+      const sendResult = await sendWhatsApp(r.customer_phone, body);
+      if (sendResult.sent) {
+        await reservations.markReservation(r.id, { Recordatorio24h: true });
+      }
+      results.push({ reservation_id: r.id, window: "24h", ...sendResult });
     }
 
-    for (const r of upcoming1h) {
+    for (const r of upcoming1h.filter((r) => !r.reminded_1h)) {
       const body =
-        `¡Hola ${r.customer_name}! Tu reserva es en 1 hora, hoy a las ${r.time} ` +
-        `para ${r.party_size} persona(s). ¡Te esperamos!`;
-      results.push({
-        reservation_id: r.id,
-        window: "1h",
-        ...(await sendWhatsApp(r.customer_phone, body)),
-      });
+        `¡Hola ${r.customer_name}! Tu reserva es en aproximadamente 1 hora, ` +
+        `hoy a las ${r.time} para ${r.party_size} persona(s). ¡Te esperamos!`;
+      const sendResult = await sendWhatsApp(r.customer_phone, body);
+      if (sendResult.sent) {
+        await reservations.markReservation(r.id, { Recordatorio1h: true });
+      }
+      results.push({ reservation_id: r.id, window: "1h", ...sendResult });
     }
 
     res.json({ ok: true, processed: results.length, results });
@@ -86,12 +90,11 @@ router.post("/internal/reminders/run", requireInternalSecret, async (req, res) =
   }
 });
 
+// Pide reseña a las visitas cuya reserva pasó hace 2-4 horas. Idempotente:
+// marca ResenaPedida y pasa la reserva a Estado "completada" tras enviar.
 router.post("/internal/reviews/run", requireInternalSecret, async (req, res) => {
   try {
-    // TODO (punto 11 CLAUDE.md): getRecentlyCompletedVisits es un stub que
-    // reutiliza getUpcomingReservations. Sustituir cuando Covermanager/TheFork
-    // exponga un endpoint real de visitas completadas.
-    const recentVisits = await reservations.getRecentlyCompletedVisits({ hoursAgo: 2 });
+    const recentVisits = await reservations.getRecentlyCompletedVisits({ hoursAgo: 4 });
 
     const reviewUrl = process.env.GOOGLE_REVIEW_URL || "https://TU_ENLACE_GOOGLE_REVIEW";
     const results = [];
@@ -99,10 +102,19 @@ router.post("/internal/reviews/run", requireInternalSecret, async (req, res) => 
       const body =
         `Gracias por visitarnos, ${r.customer_name} 🙏 Si te gustó tu experiencia, ` +
         `¿nos dejarías una reseña en Google? ${reviewUrl}`;
-      results.push({
-        reservation_id: r.id,
-        ...(await sendWhatsApp(r.customer_phone, body)),
-      });
+      const sendResult = await sendWhatsApp(r.customer_phone, body);
+      if (sendResult.sent) {
+        await reservations.markReservation(r.id, {
+          ResenaPedida: true,
+          Estado: "completada",
+        });
+        // La visita ya ocurrió: es el momento correcto de contarla en la
+        // memoria del cliente (no al reservar ni al escribir por WhatsApp).
+        await customerMemory
+          .recordVisit(r.customer_phone)
+          .catch((err) => console.error("[internalJobs] error registrando visita:", err));
+      }
+      results.push({ reservation_id: r.id, ...sendResult });
     }
 
     res.json({ ok: true, processed: results.length, results });

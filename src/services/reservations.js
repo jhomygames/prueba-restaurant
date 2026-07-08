@@ -39,6 +39,9 @@ function toReservationShape(record) {
     notes: f.Notas || "",
     status: f.Estado,
     table_id: (f.Mesa && f.Mesa[0]) || null,
+    reminded_24h: Boolean(f.Recordatorio24h),
+    reminded_1h: Boolean(f.Recordatorio1h),
+    review_requested: Boolean(f.ResenaPedida),
   };
 }
 
@@ -113,7 +116,12 @@ async function cancelReservation({ reservation_id, customer_phone, date }) {
   return { cancelled: true, reservation: toReservationShape(updated) };
 }
 
-async function getUpcomingReservations({ hoursAhead }) {
+/**
+ * Reservas confirmadas cuya hora cae entre `hoursFloor` y `hoursAhead` en el
+ * futuro. El rango evita solapes entre el recordatorio de 24h y el de 1h
+ * (una reserva a 30 min NO debe recibir el mensaje de "mañana").
+ */
+async function getUpcomingReservations({ hoursAhead, hoursFloor = 0 }) {
   const now = Date.now();
   const confirmadas = await listRecords(TABLE_RESERVAS, {
     filterByFormula: `{Estado} = 'confirmada'`,
@@ -124,17 +132,23 @@ async function getUpcomingReservations({ hoursAhead }) {
     .filter((r) => {
       const resTime = new Date(`${r.date}T${r.time}:00`).getTime();
       const diff = resTime - now;
-      return diff > 0 && diff <= hoursAhead * 60 * 60 * 1000;
+      return diff > hoursFloor * 60 * 60 * 1000 && diff <= hoursAhead * 60 * 60 * 1000;
     });
 }
 
+/**
+ * Reservas confirmadas cuya hora ya pasó (hasta `hoursAgo` atrás) y a las que
+ * aún no se les pidió reseña. El marcado (ResenaPedida) lo hace internalJobs
+ * tras enviar el mensaje, para que la petición sea idempotente entre
+ * ejecuciones de Make cada 15 min.
+ */
 async function getRecentlyCompletedVisits({ hoursAgo }) {
   const now = Date.now();
-  const confirmadas = await listRecords(TABLE_RESERVAS, {
-    filterByFormula: `{Estado} = 'confirmada'`,
+  const candidatas = await listRecords(TABLE_RESERVAS, {
+    filterByFormula: `AND({Estado} = 'confirmada', {ResenaPedida} = FALSE())`,
   });
 
-  return confirmadas
+  return candidatas
     .map(toReservationShape)
     .filter((r) => {
       const resTime = new Date(`${r.date}T${r.time}:00`).getTime();
@@ -143,10 +157,20 @@ async function getRecentlyCompletedVisits({ hoursAgo }) {
     });
 }
 
+/**
+ * Marca flags de control sobre una reserva (Recordatorio24h, Recordatorio1h,
+ * ResenaPedida, Estado...). `fields` usa los nombres de campo de Airtable.
+ */
+async function markReservation(reservationId, fields) {
+  const updated = await updateRecord(TABLE_RESERVAS, reservationId, fields);
+  return toReservationShape(updated);
+}
+
 module.exports = {
   checkAvailability,
   createReservation,
   cancelReservation,
   getUpcomingReservations,
   getRecentlyCompletedVisits,
+  markReservation,
 };

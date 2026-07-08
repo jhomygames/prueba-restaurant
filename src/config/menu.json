@@ -1,5 +1,6 @@
 {
-  "_TODO": "Cargar la carta real del restaurante. Estos son datos de ejemplo para desarrollo.",
+  "_NOTA": "Carta extraída de qr.gourmeatsapp.com (sandbox, 2026-07-09). Los alérgenos son EJEMPLO asignados por ingredientes típicos: el restaurante DEBE validarlos plato a plato antes de usar en producción (obligación legal RD 126/2015).",
+  "restaurante": "Hamburguesería (sandbox Gourmeats)",
   "alergenos_catalogo": [
     "gluten", "crustaceos", "huevos", "pescado", "cacahuetes", "soja",
     "lacteos", "frutos_de_cascara", "apio", "mostaza", "sesamo",
@@ -7,32 +8,120 @@
   ],
   "categorias": [
     {
-      "nombre": "Entrantes",
+      "nombre": "Hamburguesa del mes",
       "platos": [
         {
-          "nombre": "Croquetas de jamón",
-          "precio": 6.5,
-          "alergenos": ["gluten", "lacteos", "huevos"]
-        },
-        {
-          "nombre": "Ensalada César",
-          "precio": 7.0,
-          "alergenos": ["gluten", "lacteos", "huevos", "pescado"]
+          "nombre": "Hamburguesa del mes",
+          "precio": 13.5,
+          "descripcion": "Creación especial que rota cada mes. Pregunta por la de este mes.",
+          "alergenos": ["gluten", "lacteos", "huevos", "sesamo"]
         }
       ]
     },
     {
-      "nombre": "Principales",
+      "nombre": "Entrantes",
       "platos": [
         {
-          "nombre": "Pasta al pesto",
-          "precio": 9.5,
-          "alergenos": ["gluten", "frutos_de_cascara", "lacteos"]
+          "nombre": "Demo Jam",
+          "precio": 15.5,
+          "descripcion": "Base de patatas fritas cubiertas con bacon jam exclusivo, cocinado a baja temperatura.",
+          "alergenos": ["sulfitos"]
         },
         {
-          "nombre": "Salmón a la plancha",
-          "precio": 13.0,
-          "alergenos": ["pescado"]
+          "nombre": "Croquetas de carrillera",
+          "precio": 11.5,
+          "descripcion": "Croquetas 100% artesanales de carrillera.",
+          "alergenos": ["gluten", "lacteos", "huevos"]
+        }
+      ]
+    },
+    {
+      "nombre": "Burgers",
+      "platos": [
+        {
+          "nombre": "Space Jam",
+          "precio": 15.95,
+          "descripcion": "180 g de carne dry aged, doble queso Monterrey Jack y Cheddar, guiso de bacon jam, crema de maho-bacon.",
+          "alergenos": ["gluten", "lacteos", "huevos", "sesamo"]
+        },
+        {
+          "nombre": "La Exclusive",
+          "precio": 16.95,
+          "descripcion": "Subcampeona de la Ruta de la Hamburguesa 2025 y mejor burger de Madrid 2025.",
+          "alergenos": ["gluten", "lacteos", "huevos", "sesamo"]
+        }
+      ]
+    },
+    {
+      "nombre": "Smash",
+      "platos": [
+        {
+          "nombre": "Haz tu burger smash",
+          "precio": null,
+          "descripcion": "Convierte cualquier hamburguesa de la carta en smash (suplemento; los alérgenos son los de la burger elegida).",
+          "alergenos": []
+        },
+        {
+          "nombre": "Smash pollo",
+          "precio": 14.95,
+          "descripcion": "2 patties de pollo, queso americano, pepinillo, cebolla y bacon en pan brioche artesanal. Con patatas.",
+          "alergenos": ["gluten", "lacteos", "huevos"]
+        }
+      ]
+    },
+    {
+      "nombre": "Chicken burgers",
+      "platos": [
+        {
+          "nombre": "Felipe",
+          "precio": 14.95,
+          "descripcion": "Pan brioche artesanal, crema ranchera, contramuslo de pollo empanado, crema de queso americano y bacon.",
+          "alergenos": ["gluten", "lacteos", "huevos", "mostaza"]
+        },
+        {
+          "nombre": "La Pollx",
+          "precio": 14.95,
+          "descripcion": "Hamburguesa de pollo de la casa.",
+          "alergenos": ["gluten", "lacteos", "huevos"]
+        }
+      ]
+    },
+    {
+      "nombre": "Veggie burgers",
+      "platos": [
+        {
+          "nombre": "Veggie burger",
+          "precio": 13.95,
+          "descripcion": "Pepinillo laminado, cebolla caramelizada, hamburguesa vegetal, cebolla frita, pan brioche artesanal.",
+          "alergenos": ["gluten", "soja"]
+        }
+      ]
+    },
+    {
+      "nombre": "Ensaladas",
+      "platos": [
+        {
+          "nombre": "La Cesi",
+          "precio": 13.95,
+          "descripcion": "Mezclum de lechugas, pollo crujiente, láminas de queso, picatostes y salsa césar.",
+          "alergenos": ["gluten", "lacteos", "huevos", "pescado", "mostaza"]
+        }
+      ]
+    },
+    {
+      "nombre": "Para los peques",
+      "platos": [
+        {
+          "nombre": "Cheeseburger junior",
+          "precio": 8.95,
+          "descripcion": "100 g de carne de vacuno, queso cheddar, pan brioche a la mantequilla y patatas fritas. Hasta 12 años.",
+          "alergenos": ["gluten", "lacteos"]
+        },
+        {
+          "nombre": "Chicken junior",
+          "precio": 8.95,
+          "descripcion": "Hamburguesa de pollo empanado crujiente con queso y patatas. Hasta 12 años.",
+          "alergenos": ["gluten", "lacteos", "huevos"]
         }
       ]
     },
@@ -40,10 +129,65 @@
       "nombre": "Postres",
       "platos": [
         {
-          "nombre": "Tarta de queso",
-          "precio": 5.0,
-          "alergenos": ["gluten", "lacteos", "huevos"]
+          "nombre": "Tarta Happy Hippo",
+          "precio": 7.95,
+          "descripcion": "Tarta de Kinder acompañada de su chocolatina original.",
+          "alergenos": ["gluten", "lacteos", "frutos_de_cascara", "soja", "huevos"]
+        },
+        {
+          "nombre": "Helado de pistacho artesano",
+          "precio": 5.95,
+          "descripcion": "Helado artesano de pistacho de la Comunidad de Madrid.",
+          "alergenos": ["lacteos", "frutos_de_cascara", "huevos"]
         }
+      ]
+    },
+    {
+      "nombre": "Cervezas",
+      "platos": [
+        { "nombre": "Mahou reserva", "precio": 3.9, "descripcion": "", "alergenos": ["gluten"] },
+        { "nombre": "Mahou clásica", "precio": 2.95, "descripcion": "", "alergenos": ["gluten"] },
+        { "nombre": "Jarra de cerveza", "precio": 4.5, "descripcion": "", "alergenos": ["gluten"] },
+        { "nombre": "Copa radler", "precio": 2.95, "descripcion": "", "alergenos": ["gluten"] },
+        { "nombre": "Jarra radler", "precio": 4.5, "descripcion": "", "alergenos": ["gluten"] }
+      ]
+    },
+    {
+      "nombre": "Refrescos",
+      "platos": [
+        { "nombre": "Agua mineral", "precio": 2.9, "descripcion": "", "alergenos": [] },
+        { "nombre": "Tónica", "precio": 3.5, "descripcion": "", "alergenos": [] },
+        { "nombre": "Agua con gas", "precio": 3.5, "descripcion": "", "alergenos": [] },
+        { "nombre": "Coca-Cola", "precio": 3.5, "descripcion": "", "alergenos": [] },
+        { "nombre": "Coca-Cola Zero", "precio": 3.5, "descripcion": "", "alergenos": [] }
+      ]
+    },
+    {
+      "nombre": "Vinos",
+      "platos": [
+        { "nombre": "NOC Coupage 2018 (Ramón Bilbao), copa", "precio": 3.5, "descripcion": "", "alergenos": ["sulfitos"] },
+        { "nombre": "NOC Rose Syrah 2023, copa", "precio": 3.5, "descripcion": "", "alergenos": ["sulfitos"] },
+        { "nombre": "Viognier Lías, copa", "precio": 3.5, "descripcion": "", "alergenos": ["sulfitos"] }
+      ]
+    },
+    {
+      "nombre": "Ginebras",
+      "platos": [
+        { "nombre": "Puerto de Indias", "precio": 7.5, "descripcion": "", "alergenos": [] },
+        { "nombre": "Beefeater", "precio": 7.5, "descripcion": "", "alergenos": [] },
+        { "nombre": "Seagrams", "precio": 7.5, "descripcion": "", "alergenos": [] },
+        { "nombre": "Larios", "precio": 6.5, "descripcion": "", "alergenos": [] },
+        { "nombre": "Tanqueray", "precio": 7.5, "descripcion": "", "alergenos": [] }
+      ]
+    },
+    {
+      "nombre": "Rones",
+      "platos": [
+        { "nombre": "Barceló", "precio": 7.5, "descripcion": "", "alergenos": [] },
+        { "nombre": "Cacique", "precio": 7.5, "descripcion": "", "alergenos": [] },
+        { "nombre": "Brugal", "precio": 7.5, "descripcion": "", "alergenos": [] },
+        { "nombre": "Legendario", "precio": 8.5, "descripcion": "", "alergenos": [] },
+        { "nombre": "Santa Teresa", "precio": 7.5, "descripcion": "", "alergenos": [] }
       ]
     }
   ]

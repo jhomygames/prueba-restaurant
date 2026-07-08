@@ -58,14 +58,23 @@ const tools = [
   {
     name: "get_menu_info",
     description:
-      "Devuelve información de la carta: platos por categoría, precios y los 14 alérgenos obligatorios de cada plato. Puede filtrar por categoría o por alérgeno a evitar.",
+      "Devuelve información de la carta: platos con precio, descripción y los 14 alérgenos obligatorios de cada plato. Filtra por categoría, por nombre de plato, o por alérgeno a evitar. Usa siempre el filtro más específico posible (dish_name si preguntan por un plato concreto) en vez de pedir toda la carta.",
     parameters: {
       type: "object",
       properties: {
-        category: { type: "string", description: "Categoría del menú, ej. 'Entrantes'" },
+        category: {
+          type: "string",
+          description:
+            "Categoría del menú, ej. 'Entrantes', 'Burgers', 'Smash', 'Postres', 'Cervezas'",
+        },
+        dish_name: {
+          type: "string",
+          description: "Nombre (o parte del nombre) de un plato concreto, ej. 'croquetas'",
+        },
         exclude_allergen: {
           type: "string",
-          description: "Alérgeno a excluir de los resultados, ej. 'gluten'",
+          description:
+            "Alérgeno a excluir de los resultados. Uno de: gluten, crustaceos, huevos, pescado, cacahuetes, soja, lacteos, frutos_de_cascara, apio, mostaza, sesamo, sulfitos, altramuces, moluscos",
         },
       },
       required: [],
