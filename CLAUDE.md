@@ -41,9 +41,10 @@ con dos canales que comparten el mismo backend y las mismas herramientas:
   `anthropic` — Vapi todavía no soporta el id `claude-sonnet-5`, ver lista de modelos
   soportados si se necesita actualizar). Voz `11labs` (voiceId `21m00Tcm4TlvDq8ikWAM`,
   modelo `eleven_multilingual_v2`), transcriber `deepgram nova-2` en español. Tools
-  apuntando a `/vapi/tools` del backend. Pendiente: asignar un número de teléfono al
-  assistant en Vapi (Vapi Phone Number o importar el número de Twilio) para poder recibir
-  llamadas reales.
+  apuntando a `/vapi/tools` del backend.
+- **Número de teléfono asignado (2026-07-08)**: `+15623959059` (número gratuito de Vapi,
+  provider `vapi`, id `fc4ba1ca-6517-427f-ad04-91d9db2b5f65`), ligado directo al assistant
+  de arriba. Puede tardar unos minutos en pasar de `activating` a `active` tras crearse.
 - **Automatizaciones**: híbrido Claude Code + Make.com. Toda la lógica de negocio vive en
   el backend (`src/routes/internalJobs.js`); Make.com solo actúa como "reloj" que dispara
   un HTTP POST por horario. Se decidió así para no depender de módulos frágiles de Make
