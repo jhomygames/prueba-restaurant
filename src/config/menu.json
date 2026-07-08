@@ -1,0 +1,50 @@
+{
+  "_TODO": "Cargar la carta real del restaurante. Estos son datos de ejemplo para desarrollo.",
+  "alergenos_catalogo": [
+    "gluten", "crustaceos", "huevos", "pescado", "cacahuetes", "soja",
+    "lacteos", "frutos_de_cascara", "apio", "mostaza", "sesamo",
+    "sulfitos", "altramuces", "moluscos"
+  ],
+  "categorias": [
+    {
+      "nombre": "Entrantes",
+      "platos": [
+        {
+          "nombre": "Croquetas de jamón",
+          "precio": 6.5,
+          "alergenos": ["gluten", "lacteos", "huevos"]
+        },
+        {
+          "nombre": "Ensalada César",
+          "precio": 7.0,
+          "alergenos": ["gluten", "lacteos", "huevos", "pescado"]
+        }
+      ]
+    },
+    {
+      "nombre": "Principales",
+      "platos": [
+        {
+          "nombre": "Pasta al pesto",
+          "precio": 9.5,
+          "alergenos": ["gluten", "frutos_de_cascara", "lacteos"]
+        },
+        {
+          "nombre": "Salmón a la plancha",
+          "precio": 13.0,
+          "alergenos": ["pescado"]
+        }
+      ]
+    },
+    {
+      "nombre": "Postres",
+      "platos": [
+        {
+          "nombre": "Tarta de queso",
+          "precio": 5.0,
+          "alergenos": ["gluten", "lacteos", "huevos"]
+        }
+      ]
+    }
+  ]
+}

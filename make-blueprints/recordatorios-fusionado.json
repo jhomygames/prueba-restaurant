@@ -1,0 +1,70 @@
+{
+	"name": "Recordatorios reservas (24h + 1h)",
+	"flow": [
+		{
+			"id": 1,
+			"mapper": {
+				"qs": [],
+				"url": "https://TU_BACKEND_URL/internal/reminders/run",
+				"data": "{}",
+				"gzip": true,
+				"method": "post",
+				"headers": [
+					{
+						"name": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"name": "x-internal-secret",
+						"value": "PEGA_AQUI_TU_INTERNAL_JOBS_SECRET"
+					}
+				],
+				"timeout": "",
+				"bodyType": "raw",
+				"contentType": "application/json",
+				"shareCookies": false,
+				"parseResponse": true,
+				"followRedirect": true,
+				"useQuerystring": false,
+				"rejectUnauthorized": true
+			},
+			"module": "http:ActionSendData",
+			"version": 3,
+			"metadata": {
+				"designer": {
+					"x": 0,
+					"y": 0
+				}
+			},
+			"parameters": {
+				"handleErrors": false
+			}
+		}
+	],
+	"metadata": {
+		"zone": "eu2.make.com",
+		"instant": false,
+		"version": 1,
+		"designer": {
+			"orphans": []
+		},
+		"scenario": {
+			"dlq": false,
+			"dataloss": false,
+			"maxErrors": 3,
+			"autoCommit": true,
+			"roundtrips": 1,
+			"sequential": false,
+			"confidential": false,
+			"freshVariables": false,
+			"autoCommitTriggerLast": true
+		}
+	},
+	"scheduling": {
+		"type": "on-demand"
+	},
+	"interface": {
+		"input": [],
+		"output": []
+	}
+}
