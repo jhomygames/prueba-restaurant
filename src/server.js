@@ -7,6 +7,7 @@ const vapiToolsRouter = require("./routes/vapiTools");
 const whatsappRouter = require("./routes/whatsapp");
 const internalJobsRouter = require("./routes/internalJobs");
 const staffApiRouter = require("./routes/staffApi");
+const callSimRouter = require("./routes/callSim");
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.get("/health", (req, res) => res.json({ ok: true }));
 app.use(vapiToolsRouter);
 app.use(whatsappRouter);
 app.use(internalJobsRouter);
+app.use(callSimRouter);
 app.use(staffApiRouter);
 
 // Panel de staff (SPA Restaurant-Manager): build de Vite en app/dist.

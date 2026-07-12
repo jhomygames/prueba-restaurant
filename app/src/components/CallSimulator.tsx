@@ -1,154 +1,202 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Phone, PhoneOff, User, Sparkles, Volume2, Calendar, Users, FileText, Check, AlertCircle, Clock } from 'lucide-react';
-import { Reservation } from '../types';
+import { Phone, PhoneOff, User, Sparkles, Users, Calendar, Check, Clock, Wrench } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface CallSimulatorProps {
   isOpen: boolean;
   onClose: () => void;
-  onAddReservation: (res: Omit<Reservation, 'id' | 'createdAt'>) => void;
+  // Se dispara cuando el agente crea la reserva en Airtable, para refrescar el plano.
+  onReservationCreated: () => void;
   onAddNotification: (title: string, message: string, type: 'incoming_call') => void;
 }
 
+type Sender = 'attendant' | 'customer' | 'system';
 interface Message {
-  sender: 'attendant' | 'customer';
+  sender: Sender;
   text: string;
+}
+
+interface Persona {
+  name: string;
+  phone: string;
+  pax: number;
+  dayPhrase: string;
+  time: string;
+  allergy: string;
+  occasion: string;
+}
+
+interface AgentTurn {
+  text: string;
+  toolActivity: { name: string; args: any }[];
+  reservationCreated: boolean;
+  reservation: any | null;
+}
+
+const MAX_TURNS = 8;
+
+const TOOL_LABELS: Record<string, string> = {
+  check_availability: 'consultó la disponibilidad de mesas',
+  create_reservation: 'registró la reserva en el sistema',
+  cancel_reservation: 'canceló la reserva',
+  get_menu_info: 'revisó la carta y los alérgenos',
+  get_customer_memory: 'consultó la ficha del cliente',
+  transfer_to_human: 'avisó al equipo humano',
+};
+
+// Personas de ejemplo para el cliente simulado. El agente real procesará la
+// reserva con sus herramientas; la persona solo da coherencia al rol-play.
+const PERSONAS: Persona[] = [
+  { name: 'Carlos Delgado', phone: '+34 682 741 928', pax: 4, dayPhrase: 'hoy', time: '21:00', allergy: 'ninguna', occasion: 'cena familiar' },
+  { name: 'Julia Vera', phone: '+34 699 188 277', pax: 2, dayPhrase: 'mañana', time: '14:00', allergy: 'ninguna', occasion: 'aniversario de bodas' },
+  { name: 'Silvia Olmedo', phone: '+34 611 987 654', pax: 6, dayPhrase: 'hoy', time: '20:30', allergy: 'gluten (celíaca)', occasion: 'cena entre amigos' },
+  { name: 'Marcos Ferrer', phone: '+34 645 220 913', pax: 3, dayPhrase: 'el viernes', time: '22:00', allergy: 'lácteos', occasion: 'cumpleaños' },
+];
+
+function authHeaders(): Record<string, string> {
+  const h: Record<string, string> = { 'Content-Type': 'application/json' };
+  const k = localStorage.getItem('dinecontrol_staff_key');
+  if (k) h['x-staff-key'] = k;
+  return h;
 }
 
 export const CallSimulator: React.FC<CallSimulatorProps> = ({
   isOpen,
   onClose,
-  onAddReservation,
+  onReservationCreated,
   onAddNotification,
 }) => {
-  const [callState, setCallState] = useState<'ringing' | 'connected' | 'completed' | 'failed'>('ringing');
+  const [callState, setCallState] = useState<'ringing' | 'connected' | 'completed'>('ringing');
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isTyping, setIsTyping] = useState<boolean>(false);
-  const [extractedData, setExtractedData] = useState<any>(null);
-  const [currentStep, setCurrentStep] = useState<number>(0);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  
-  // Scripted responses for our automated receptionist (attendant) to keep the flow intuitive
-  const attendantScripts = [
-    "Hola, gracias por llamar a DineControl AI, la recepción inteligente de nuestro restaurante. ¿Para cuántas personas y qué fecha le gustaría reservar?",
-    "Excelente. ¿Y en qué horario prefiere su mesa? También, por favor indíquenos su nombre y número de teléfono.",
-    "Entendido. ¿Tiene alguna observación especial, como alergias, restricciones dietéticas o si celebra alguna ocasión especial?",
-    "Perfecto. Toda la información ha sido recopilada. Estoy confirmando su reserva en nuestro plano de mesas de forma automática y enviándole un mensaje SMS/WhatsApp de confirmación. ¡Le esperamos!"
-  ];
+  const [agentThinking, setAgentThinking] = useState(false);
+  const [customerThinking, setCustomerThinking] = useState(false);
+  const [reservationResult, setReservationResult] = useState<any | null>(null);
+
+  const personaRef = useRef<Persona>(PERSONAS[0]);
+  const activeRef = useRef(false);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setCallState('ringing');
       setMessages([]);
-      setExtractedData(null);
-      setCurrentStep(0);
-      // Play a soft ring sounds simulation or vibration if desired (visual only here)
+      setAgentThinking(false);
+      setCustomerThinking(false);
+      setReservationResult(null);
+      personaRef.current = PERSONAS[Math.floor(Math.random() * PERSONAS.length)];
+    } else {
+      activeRef.current = false;
     }
   }, [isOpen]);
 
-  // Start call session
-  const handleAnswer = () => {
-    setCallState('connected');
-    setMessages([{ sender: 'attendant', text: attendantScripts[0] }]);
-    triggerCustomerResponse([], attendantScripts[0], 1);
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+  }, [messages, agentThinking, customerThinking]);
+
+  const appendMessage = (sender: Sender, text: string) => {
+    setMessages((prev) => [...prev, { sender, text }]);
   };
 
-  const handleDecline = () => {
-    onClose();
+  const callAgent = async (history: { role: string; text: string }[]): Promise<AgentTurn> => {
+    const res = await fetch('/api/call/agent', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ history, customer_phone: personaRef.current.phone }),
+    });
+    if (!res.ok) throw new Error('agent_error');
+    return res.json();
   };
 
-  // Call server-side Gemini to simulate the customer
-  const triggerCustomerResponse = async (history: Message[], lastAttendant: string, nextStep: number) => {
-    setIsTyping(true);
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const res = await fetch('/api/call/simulate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          history: history,
-          lastAttendantResponse: lastAttendant,
-          targetDate: today
-        })
-      });
-
-      if (!res.ok) throw new Error("Error simulating client conversation");
-      const data = await res.json();
-      
-      setIsTyping(false);
-      setMessages(prev => [...prev, { sender: 'customer', text: data.text }]);
-      setCurrentStep(nextStep);
-
-      // If Gemini extracted structured data, update it
-      if (data.extractedData && Object.keys(data.extractedData).length > 0) {
-        setExtractedData((prev: any) => ({
-          ...prev,
-          ...data.extractedData
-        }));
-      }
-    } catch (err) {
-      console.error(err);
-      setIsTyping(false);
-      // Fallback local mock in case server has issues
-      setMessages(prev => [...prev, { 
-        sender: 'customer', 
-        text: "Hola, me gustaría una mesa para 4 personas para hoy a las 21:00 a nombre de Carlos Delgado. Teléfono +56 9 8274 1928. Sin mariscos por favor." 
-      }]);
-      setExtractedData({
-        customerName: "Carlos Delgado",
-        customerPhone: "+56 9 8274 1928",
-        pax: 4,
-        date: new Date().toISOString().split('T')[0],
-        time: "21:00",
-        notes: "Sin mariscos",
-        allergies: ["Mariscos"]
-      });
-      setCurrentStep(nextStep);
-    }
+  const callCustomer = async (history: { role: string; text: string }[]): Promise<string> => {
+    const res = await fetch('/api/call/customer', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ history, persona: personaRef.current }),
+    });
+    if (!res.ok) throw new Error('customer_error');
+    const data = await res.json();
+    return data.text;
   };
 
-  // Operator advances the receptionist script
-  const handleNextAttendantTurn = () => {
-    if (currentStep >= attendantScripts.length) return;
-    
-    const nextAttendantText = attendantScripts[currentStep];
-    const updatedHistory = [...messages, { sender: 'attendant', text: nextAttendantText }];
-    setMessages(updatedHistory);
-    
-    if (currentStep === attendantScripts.length - 1) {
-      // Final turn
-      setCallState('completed');
+  const finishCompleted = (reservation: any | null) => {
+    activeRef.current = false;
+    setReservationResult(reservation);
+    setCallState('completed');
+    if (reservation) {
       onAddNotification(
-        "Llamada Auto-Confirmada",
-        `Reserva para ${extractedData?.customerName || 'Cliente'} (${extractedData?.pax || 2} pax) procesada por voz.`,
+        'Reserva por Llamada AI',
+        `${reservation.customerName || 'Cliente'} (${reservation.pax || '?'} pax) para el ${reservation.date} a las ${reservation.time}. Creada por el agente de voz.`,
         'incoming_call'
       );
-    } else {
-      triggerCustomerResponse(updatedHistory, nextAttendantText, currentStep + 1);
+      onReservationCreated();
     }
   };
 
-  const handleConfirmReservation = () => {
-    if (!extractedData) return;
+  // Orquesta la llamada: agente (real, con herramientas) <-> cliente (rol-play).
+  const runCall = async () => {
+    activeRef.current = true;
+    const history: { role: string; text: string }[] = [];
 
-    // Default dates if empty
-    const today = new Date().toISOString().split('T')[0];
-    
-    onAddReservation({
-      customerName: extractedData.customerName || 'Cliente por Teléfono',
-      customerPhone: extractedData.customerPhone || '+34 600 000 000',
-      date: extractedData.date || today,
-      time: extractedData.time || '20:30',
-      pax: Number(extractedData.pax) || 4,
-      tableId: '', // Will be assigned on the floor plan
-      status: 'confirmed',
-      notes: extractedData.notes || 'Reservado por asistente telefónico AI.',
-      allergies: extractedData.allergies || [],
-      autoConfirmMessage: true
-    });
-    
+    for (let turn = 0; turn < MAX_TURNS && activeRef.current; turn++) {
+      // Turno del agente real
+      setAgentThinking(true);
+      let agent: AgentTurn;
+      try {
+        agent = await callAgent(history);
+      } catch {
+        if (!activeRef.current) return;
+        setAgentThinking(false);
+        appendMessage('system', 'Se ha perdido la conexión con el agente.');
+        finishCompleted(null);
+        return;
+      }
+      if (!activeRef.current) return;
+      setAgentThinking(false);
+
+      agent.toolActivity?.forEach((t) => {
+        const label = TOOL_LABELS[t.name] || `usó ${t.name}`;
+        appendMessage('system', `María ${label}`);
+      });
+      appendMessage('attendant', agent.text);
+      history.push({ role: 'agent', text: agent.text });
+
+      if (agent.reservationCreated) {
+        finishCompleted(agent.reservation);
+        return;
+      }
+
+      // Turno del cliente simulado
+      setCustomerThinking(true);
+      let customerText: string;
+      try {
+        customerText = await callCustomer(history);
+      } catch {
+        if (!activeRef.current) return;
+        setCustomerThinking(false);
+        finishCompleted(null);
+        return;
+      }
+      if (!activeRef.current) return;
+      setCustomerThinking(false);
+      appendMessage('customer', customerText);
+      history.push({ role: 'customer', text: customerText });
+    }
+
+    // Se alcanzó el límite de turnos sin cerrar reserva
+    if (activeRef.current) finishCompleted(null);
+  };
+
+  const handleAnswer = () => {
+    setCallState('connected');
+    runCall();
+  };
+
+  const handleHangUp = () => {
+    activeRef.current = false;
     onClose();
   };
+
+  const p = personaRef.current;
 
   return (
     <AnimatePresence>
@@ -160,7 +208,7 @@ export const CallSimulator: React.FC<CallSimulatorProps> = ({
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             className="w-full max-w-lg bg-brand-surface border border-brand-outline rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
           >
-            {/* Call State: Ringing */}
+            {/* Ringing */}
             {callState === 'ringing' && (
               <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
                 <div className="relative mb-6">
@@ -169,22 +217,18 @@ export const CallSimulator: React.FC<CallSimulatorProps> = ({
                     <Phone className="w-10 h-10 text-brand-surface animate-bounce" />
                   </div>
                 </div>
-                
-                <h3 className="font-sans font-bold text-2xl text-brand-text mb-1">
-                  LLAMADA ENTRANTE
-                </h3>
-                <p className="text-sm font-mono text-brand-secondary tracking-widest mb-4">
-                  CLIENTE AI SIMULADOR
-                </p>
+
+                <h3 className="font-sans font-bold text-2xl text-brand-text mb-1">LLAMADA ENTRANTE</h3>
+                <p className="text-sm font-mono text-brand-secondary tracking-widest mb-4">CLIENTE SIMULADO</p>
                 <div className="bg-brand-surface-low border border-brand-outline rounded-lg p-3 max-w-sm mb-8">
                   <p className="text-xs text-brand-muted">
-                    El sistema de voz de DineControl AI simula la recepción telefónica de un cliente real mediante el modelo Gemini 3.5. Al contestar, podrás ver el diálogo y cómo se confirman los datos automáticamente.
+                    Al contestar, la recepcionista <strong className="text-brand-text">María</strong> (el mismo agente de voz de Vapi, con sus herramientas) atenderá a un cliente simulado por Claude. Si todo va bien, <strong className="text-brand-text">la reserva se creará de verdad en Airtable</strong> y aparecerá en el plano.
                   </p>
                 </div>
 
                 <div className="flex gap-6 w-full max-w-xs">
                   <button
-                    onClick={handleDecline}
+                    onClick={handleHangUp}
                     className="flex-1 flex items-center justify-center gap-2 py-3 bg-brand-surface-high border border-brand-outline hover:bg-brand-surface-highest transition-colors rounded-xl font-sans font-medium text-brand-text cursor-pointer"
                   >
                     <PhoneOff className="w-5 h-5 text-brand-secondary" />
@@ -201,22 +245,19 @@ export const CallSimulator: React.FC<CallSimulatorProps> = ({
               </div>
             )}
 
-            {/* Call State: Connected */}
+            {/* Connected */}
             {callState === 'connected' && (
               <div className="flex flex-col h-full overflow-hidden">
-                {/* Header with Call Status */}
                 <div className="flex items-center justify-between p-4 bg-brand-surface-low border-b border-brand-outline">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-brand-primary/10 rounded-full flex items-center justify-center border border-brand-primary/30">
                       <Sparkles className="w-5 h-5 text-brand-primary animate-pulse" />
                     </div>
                     <div>
-                      <h4 className="font-sans font-bold text-sm text-brand-text">Recepción Telefónica AI</h4>
-                      <p className="text-[10px] text-brand-primary font-mono tracking-wider">LLAMADA EN CURSO</p>
+                      <h4 className="font-sans font-bold text-sm text-brand-text">María · Recepción de Voz</h4>
+                      <p className="text-[10px] text-brand-primary font-mono tracking-wider">LLAMADA EN CURSO · AGENTE REAL</p>
                     </div>
                   </div>
-                  
-                  {/* Bouncing Audio Waves */}
                   <div className="flex items-center gap-1 h-6">
                     <div className="w-1 bg-brand-primary rounded animate-[bounce_1s_infinite_100ms]" style={{ height: '50%' }} />
                     <div className="w-1 bg-brand-primary rounded animate-[bounce_1s_infinite_300ms]" style={{ height: '100%' }} />
@@ -225,193 +266,140 @@ export const CallSimulator: React.FC<CallSimulatorProps> = ({
                   </div>
                 </div>
 
-                {/* Conversation Body */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-[250px] max-h-[350px]">
-                  {messages.map((m, idx) => (
-                    <div
-                      key={idx}
-                      className={`flex flex-col ${m.sender === 'attendant' ? 'items-end' : 'items-start'}`}
-                    >
-                      <div className="flex items-center gap-1.5 mb-1">
-                        {m.sender === 'attendant' ? (
-                          <>
-                            <span className="text-[10px] text-brand-muted font-sans font-medium">Asistente AI (Tú)</span>
-                            <Sparkles className="w-3 h-3 text-brand-primary" />
-                          </>
-                        ) : (
-                          <>
-                            <User className="w-3 h-3 text-brand-secondary" />
-                            <span className="text-[10px] text-brand-muted font-sans font-medium">Cliente (Llamando)</span>
-                          </>
-                        )}
+                <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[280px] max-h-[420px]">
+                  {messages.map((m, idx) => {
+                    if (m.sender === 'system') {
+                      return (
+                        <div key={idx} className="flex justify-center">
+                          <div className="flex items-center gap-1.5 bg-brand-surface-low border border-brand-outline/60 text-brand-muted px-2.5 py-1 rounded-full text-[10px] font-mono">
+                            <Wrench className="w-3 h-3 text-brand-primary" />
+                            {m.text}
+                          </div>
+                        </div>
+                      );
+                    }
+                    const isAgent = m.sender === 'attendant';
+                    return (
+                      <div key={idx} className={`flex flex-col ${isAgent ? 'items-end' : 'items-start'}`}>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          {isAgent ? (
+                            <>
+                              <span className="text-[10px] text-brand-muted font-sans font-medium">María (Agente)</span>
+                              <Sparkles className="w-3 h-3 text-brand-primary" />
+                            </>
+                          ) : (
+                            <>
+                              <User className="w-3 h-3 text-brand-secondary" />
+                              <span className="text-[10px] text-brand-muted font-sans font-medium">Cliente</span>
+                            </>
+                          )}
+                        </div>
+                        <div
+                          className={`max-w-[85%] px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed ${
+                            isAgent
+                              ? 'bg-brand-surface-high border border-brand-outline text-brand-text rounded-tr-none'
+                              : 'bg-brand-secondary/15 border border-brand-secondary/30 text-brand-text rounded-tl-none'
+                          }`}
+                        >
+                          {m.text}
+                        </div>
                       </div>
-                      <div
-                        className={`max-w-[85%] px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed ${
-                          m.sender === 'attendant'
-                            ? 'bg-brand-surface-high border border-brand-outline text-brand-text rounded-tr-none'
-                            : 'bg-brand-secondary/15 border border-brand-secondary/30 text-brand-text rounded-tl-none'
-                        }`}
-                      >
-                        {m.text}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
-                  {isTyping && (
-                    <div className="flex flex-col items-start">
+                  {(agentThinking || customerThinking) && (
+                    <div className={`flex flex-col ${agentThinking ? 'items-end' : 'items-start'}`}>
                       <div className="flex items-center gap-1.5 mb-1">
-                        <User className="w-3 h-3 text-brand-secondary" />
-                        <span className="text-[10px] text-brand-muted font-sans font-medium">Cliente hablando...</span>
+                        <span className="text-[10px] text-brand-muted font-sans font-medium">
+                          {agentThinking ? 'María está atendiendo...' : 'Cliente hablando...'}
+                        </span>
                       </div>
-                      <div className="bg-brand-secondary/15 border border-brand-secondary/30 px-4 py-3 rounded-2xl rounded-tl-none flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 bg-brand-secondary rounded-full animate-bounce" />
-                        <span className="w-1.5 h-1.5 bg-brand-secondary rounded-full animate-bounce [animation-delay:0.2s]" />
-                        <span className="w-1.5 h-1.5 bg-brand-secondary rounded-full animate-bounce [animation-delay:0.4s]" />
+                      <div className={`px-4 py-3 rounded-2xl flex items-center gap-1 ${agentThinking ? 'bg-brand-surface-high border border-brand-outline rounded-tr-none' : 'bg-brand-secondary/15 border border-brand-secondary/30 rounded-tl-none'}`}>
+                        <span className="w-1.5 h-1.5 bg-brand-primary rounded-full animate-bounce" />
+                        <span className="w-1.5 h-1.5 bg-brand-primary rounded-full animate-bounce [animation-delay:0.2s]" />
+                        <span className="w-1.5 h-1.5 bg-brand-primary rounded-full animate-bounce [animation-delay:0.4s]" />
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* Live Extraction Panel */}
-                {extractedData && (
-                  <div className="p-3 mx-4 mb-4 bg-brand-surface-low border border-brand-outline rounded-xl">
-                    <h5 className="font-sans font-bold text-xs text-brand-text mb-2 flex items-center gap-1.5">
-                      <Volume2 className="w-4 h-4 text-brand-primary" />
-                      Extracción de datos en tiempo real
-                    </h5>
-                    <div className="grid grid-cols-2 gap-2 text-[11px]">
-                      <div className="flex items-center gap-1 text-brand-muted">
-                        <User className="w-3.5 h-3.5 text-brand-primary shrink-0" />
-                        <span className="truncate">
-                          Nombre: <strong className="text-brand-text font-sans">{extractedData.customerName || 'Buscando...'}</strong>
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 text-brand-muted">
-                        <Phone className="w-3.5 h-3.5 text-brand-primary shrink-0" />
-                        <span className="truncate">
-                          Teléfono: <strong className="text-brand-text font-sans">{extractedData.customerPhone || 'Buscando...'}</strong>
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 text-brand-muted">
-                        <Users className="w-3.5 h-3.5 text-brand-primary shrink-0" />
-                        <span className="truncate">
-                          Personas: <strong className="text-brand-text font-sans">{extractedData.pax || 'Buscando...'}</strong>
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 text-brand-muted">
-                        <Clock className="w-3.5 h-3.5 text-brand-primary shrink-0" />
-                        <span className="truncate">
-                          Hora: <strong className="text-brand-text font-sans">{extractedData.time || 'Buscando...'}</strong>
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Actions Footer */}
-                <div className="p-4 bg-brand-surface-low border-t border-brand-outline flex gap-4">
+                <div className="p-4 bg-brand-surface-low border-t border-brand-outline">
                   <button
-                    onClick={handleDecline}
-                    className="flex items-center justify-center gap-1.5 px-4 py-2.5 bg-brand-surface-high border border-brand-outline hover:bg-brand-surface-highest transition-colors rounded-lg font-sans text-xs text-brand-secondary cursor-pointer"
+                    onClick={handleHangUp}
+                    className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 bg-brand-surface-high border border-brand-outline hover:bg-brand-surface-highest transition-colors rounded-lg font-sans text-xs text-brand-secondary cursor-pointer"
                   >
                     <PhoneOff className="w-4 h-4" />
                     Colgar
-                  </button>
-                  
-                  <button
-                    disabled={isTyping || currentStep >= attendantScripts.length}
-                    onClick={handleNextAttendantTurn}
-                    className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-brand-primary text-brand-surface hover:bg-brand-primary/90 disabled:opacity-50 transition-colors rounded-lg font-sans font-bold text-xs cursor-pointer"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    {currentStep === attendantScripts.length - 1 
-                      ? "Confirmar y Finalizar Llamada" 
-                      : "Siguiente Pregunta del Asistente"}
                   </button>
                 </div>
               </div>
             )}
 
-            {/* Call State: Completed */}
+            {/* Completed */}
             {callState === 'completed' && (
               <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
-                <div className="w-16 h-16 bg-brand-primary/10 rounded-full flex items-center justify-center border border-brand-primary/30 mb-4 animate-bounce">
-                  <Check className="w-8 h-8 text-brand-primary" />
+                <div className={`w-16 h-16 rounded-full flex items-center justify-center border mb-4 ${reservationResult ? 'bg-brand-primary/10 border-brand-primary/30 animate-bounce' : 'bg-brand-surface-high border-brand-outline'}`}>
+                  {reservationResult ? <Check className="w-8 h-8 text-brand-primary" /> : <Phone className="w-8 h-8 text-brand-muted" />}
                 </div>
-                
-                <h3 className="font-sans font-bold text-xl text-brand-text mb-1">
-                  LLAMADA COMPLETADA
-                </h3>
+
+                <h3 className="font-sans font-bold text-xl text-brand-text mb-1">LLAMADA FINALIZADA</h3>
                 <p className="text-xs text-brand-primary font-mono tracking-widest mb-6">
-                  RESERVA EXTRAÍDA POR AI
+                  {reservationResult ? 'RESERVA CREADA EN AIRTABLE' : 'SIN RESERVA'}
                 </p>
 
-                {/* Ticket view */}
-                <div className="w-full max-w-sm bg-brand-surface-low border border-brand-outline rounded-xl p-4 text-left space-y-3.5 mb-8 relative">
-                  <div className="absolute top-3 right-3 flex items-center gap-1 bg-brand-primary/10 border border-brand-primary/30 px-2 py-0.5 rounded text-[9px] font-mono text-brand-primary">
-                    <Sparkles className="w-3 h-3" /> AUTO-CONFIRMADA
+                {reservationResult ? (
+                  <div className="w-full max-w-sm bg-brand-surface-low border border-brand-outline rounded-xl p-4 text-left space-y-3.5 mb-8 relative">
+                    <div className="absolute top-3 right-3 flex items-center gap-1 bg-brand-primary/10 border border-brand-primary/30 px-2 py-0.5 rounded text-[9px] font-mono text-brand-primary">
+                      <Sparkles className="w-3 h-3" /> POR EL AGENTE
+                    </div>
+                    <h4 className="font-sans font-bold text-xs text-brand-muted tracking-wider uppercase border-b border-brand-outline pb-1.5">
+                      Detalles de la Reserva
+                    </h4>
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-[10px] text-brand-muted block">Cliente</span>
+                        <strong className="text-brand-text font-sans text-sm">{reservationResult.customerName || '—'}</strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-brand-muted block">Teléfono</span>
+                        <strong className="text-brand-text font-sans">{reservationResult.customerPhone || '—'}</strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-brand-muted block">Comensales</span>
+                        <strong className="text-brand-text font-mono text-sm flex items-center gap-1">
+                          <Users className="w-3.5 h-3.5 text-brand-primary" /> {reservationResult.pax || '?'}
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-brand-muted block">Fecha &amp; Hora</span>
+                        <strong className="text-brand-text font-sans flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 text-brand-primary" /> {reservationResult.date} · {reservationResult.time}
+                        </strong>
+                      </div>
+                    </div>
+                    {reservationResult.notes && (
+                      <div className="border-t border-brand-outline pt-2">
+                        <span className="text-[10px] text-brand-muted block">Observaciones</span>
+                        <p className="text-xs text-brand-text italic mt-0.5">"{reservationResult.notes}"</p>
+                      </div>
+                    )}
+                    <div className="border-t border-brand-outline pt-2 flex items-center gap-1.5 text-[10px] text-brand-muted">
+                      <Calendar className="w-3.5 h-3.5 text-brand-primary" />
+                      Ya visible en el plano y en el calendario.
+                    </div>
                   </div>
-
-                  <h4 className="font-sans font-bold text-xs text-brand-muted tracking-wider uppercase border-b border-brand-outline pb-1.5">
-                    Detalles de la Cita
-                  </h4>
-
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <span className="text-[10px] text-brand-muted block">Cliente</span>
-                      <strong className="text-brand-text font-sans text-sm">{extractedData?.customerName || 'Carlos Delgado'}</strong>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-brand-muted block">Teléfono</span>
-                      <strong className="text-brand-text font-sans">{extractedData?.customerPhone || '+56 9 8274 1928'}</strong>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-brand-muted block">Comensales</span>
-                      <strong className="text-brand-text font-mono text-sm flex items-center gap-1">
-                        <Users className="w-3.5 h-3.5 text-brand-primary" /> {extractedData?.pax || 4} Personas
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-brand-muted block">Fecha &amp; Hora</span>
-                      <strong className="text-brand-text font-sans flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5 text-brand-primary" /> {extractedData?.time || '21:00'} hrs
-                      </strong>
-                    </div>
+                ) : (
+                  <div className="w-full max-w-sm bg-brand-surface-low border border-brand-outline rounded-xl p-4 text-xs text-brand-muted mb-8">
+                    La llamada terminó sin cerrar una reserva (el cliente no confirmó o pidió otra cosa). Puedes volver a intentarlo.
                   </div>
+                )}
 
-                  {extractedData?.notes && (
-                    <div className="border-t border-brand-outline pt-2">
-                      <span className="text-[10px] text-brand-muted block">Observaciones</span>
-                      <p className="text-xs text-brand-text italic mt-0.5">"{extractedData.notes}"</p>
-                    </div>
-                  )}
-
-                  {extractedData?.allergies && extractedData.allergies.length > 0 && (
-                    <div className="flex flex-wrap gap-1 pt-1">
-                      {extractedData.allergies.map((a: string) => (
-                        <span key={a} className="bg-brand-secondary/10 border border-brand-secondary/30 text-brand-secondary px-1.5 py-0.5 rounded text-[9px] font-sans">
-                          Alergia: {a}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex gap-4 w-full max-w-sm">
-                  <button
-                    onClick={onClose}
-                    className="flex-1 py-3 bg-brand-surface-high border border-brand-outline hover:bg-brand-surface-highest transition-colors rounded-xl font-sans text-xs text-brand-text cursor-pointer"
-                  >
-                    Descartar
-                  </button>
-                  <button
-                    onClick={handleConfirmReservation}
-                    className="flex-2 py-3 bg-brand-primary text-brand-surface hover:bg-brand-primary/90 transition-colors rounded-xl font-sans font-bold text-xs flex items-center justify-center gap-1 cursor-pointer shadow-lg shadow-brand-primary/10"
-                  >
-                    <Calendar className="w-4 h-4" />
-                    Asignar Mesa en Plano
-                  </button>
-                </div>
+                <button
+                  onClick={onClose}
+                  className="w-full max-w-sm py-3 bg-brand-primary text-brand-surface hover:bg-brand-primary/90 transition-colors rounded-xl font-sans font-bold text-xs cursor-pointer"
+                >
+                  Cerrar
+                </button>
               </div>
             )}
           </motion.div>

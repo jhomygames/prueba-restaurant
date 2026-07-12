@@ -1126,36 +1126,13 @@ export default function App() {
         onCompleteReservation={handleCompleteReservation}
       />
 
-      {/* 2. Telefonía AI Calling Simulator Screen */}
+      {/* 2. Telefonía AI Calling Simulator Screen (agente real sobre Claude) */}
       <CallSimulator
         isOpen={isCallOpen}
         onClose={() => setIsCallOpen(false)}
-        onAddReservation={(newResData) => {
-          // Attempt to auto assign an empty table with appropriate capacity
-          const suitableTable = tables.find(
-            t => t.status === 'free' && t.seats >= newResData.pax
-          ) || tables.find(t => t.status === 'free');
-
-          const tableIdToAssign = suitableTable ? suitableTable.id : '';
-
-          handleSaveReservation({
-            ...newResData,
-            tableId: tableIdToAssign
-          });
-
-          if (tableIdToAssign) {
-            addNotificationLog(
-              "Mesa Auto-Asignada",
-              `La llamada se ha agendado y auto-asignado a la ${tables.find(t => t.id === tableIdToAssign)?.name || 'Mesa libre'}.`,
-              'system'
-            );
-          } else {
-            addNotificationLog(
-              "Sin Mesa Disponible",
-              "La llamada se agendó con éxito, pero requiere asignación manual en la pestaña de Calendario porque no hay mesas libres con esta capacidad.",
-              'system'
-            );
-          }
+        onReservationCreated={() => {
+          // El agente ya creó la reserva en Airtable; refrescamos el plano.
+          refreshFromServer(false);
         }}
         onAddNotification={addNotificationLog}
       />

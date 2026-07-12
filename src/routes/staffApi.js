@@ -230,53 +230,7 @@ router.get(
   })
 );
 
-// ---------- Simulador de llamada (reemplaza al server.ts con Gemini) ----------
-// Devuelve un cliente ficticio verosímil para la demo del CallSimulator,
-// sin depender de una API key de Gemini.
-
-const CALL_MOCKS = [
-  {
-    text: "Hola, me gustaría reservar una mesa para cenar hoy a las 21:00, para 4 personas. Me llamo Carlos Delgado.",
-    extractedData: {
-      customerName: "Carlos Delgado",
-      customerPhone: "+34 682 741 928",
-      pax: 4,
-      time: "21:00",
-      notes: "Cena familiar",
-      allergies: ["Lácteos"],
-    },
-  },
-  {
-    text: "Buenas, quería una mesa para mañana a las 14:00, para 2. Es nuestro aniversario. Soy Julia Vera.",
-    extractedData: {
-      customerName: "Julia Vera",
-      customerPhone: "+34 699 188 277",
-      pax: 2,
-      time: "14:00",
-      notes: "Aniversario de bodas",
-      allergies: [],
-    },
-  },
-  {
-    text: "Hola, para hoy a las 20:30, somos 6. Uno de nosotros es celíaco. A nombre de Silvia Olmedo.",
-    extractedData: {
-      customerName: "Silvia Olmedo",
-      customerPhone: "+34 611 987 654",
-      pax: 6,
-      time: "20:30",
-      notes: "Un comensal celíaco, requiere opciones sin gluten.",
-      allergies: ["Gluten"],
-    },
-  },
-];
-
-router.post("/api/call/simulate", (req, res) => {
-  const mock = CALL_MOCKS[Math.floor(Math.random() * CALL_MOCKS.length)];
-  const today = new Date().toISOString().split("T")[0];
-  res.json({
-    ...mock,
-    extractedData: { ...mock.extractedData, date: req.body?.targetDate || today },
-  });
-});
+// El simulador de llamada vive ahora en src/routes/callSim.js (migrado a
+// Claude: usa el agente real con herramientas, no un mock).
 
 module.exports = router;

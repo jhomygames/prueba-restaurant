@@ -81,6 +81,17 @@ con dos canales que comparten el mismo backend y las mismas herramientas:
   ampliar selects). Mapeo ES↔EN en staffApi.js. Las 15 mesas del plano original de la app
   (7 sala + 4 barra + 4 terraza) están sembradas en Airtable. STAFF_API_KEY opcional
   (si se define, la API exige header x-staff-key; sin definir queda abierta — sandbox).
+- **Simulador de llamada migrado a Claude (2026-07-12)**: el "Simular LLAMADA AI" del panel
+  ya no usa Gemini ni mocks. La recepcionista del simulador ES el agente real: `src/routes/callSim.js`
+  ejecuta a María con el prompt de voz compartido (`src/config/voicePrompt.js`, misma versión que
+  el assistant de Vapi), las 6 herramientas de `tools.js` y el `toolDispatcher` común, así que
+  `create_reservation` escribe DE VERDAD en Airtable y la reserva aparece sola en el plano —
+  igual que una llamada real de Vapi, pero sobre texto. Endpoints: `POST /api/call/agent` (un
+  turno de María, encadena tool-calls; modelo claude-sonnet-5) y `POST /api/call/customer`
+  (cliente rol-play; claude-haiku-4-5). El frontend (`CallSimulator.tsx`) orquesta la conversación
+  agente↔cliente automáticamente, muestra la actividad de herramientas y, al crear la reserva,
+  refresca el plano. Requiere `ANTHROPIC_API_KEY` (ya presente en Railway; sin ella los endpoints
+  devuelven 500 agent_error/customer_error). Si se edita el prompt de voz, replicarlo en Vapi.
 - **Automatizaciones**: híbrido Claude Code + Make.com. Toda la lógica de negocio vive en
   el backend (`src/routes/internalJobs.js`); Make.com solo actúa como "reloj" que dispara
   un HTTP POST por horario. Se decidió así para no depender de módulos frágiles de Make
