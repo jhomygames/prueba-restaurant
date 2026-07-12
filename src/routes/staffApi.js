@@ -16,12 +16,14 @@
 const express = require("express");
 const airtable = require("../services/airtableClient");
 const customerMemory = require("../services/customerMemory");
+const menuService = require("../services/menuService");
 
 const router = express.Router();
 
 const MESAS = "Mesas";
 const RESERVAS = "Reservas";
 const CLIENTES = "Clientes";
+const CARTA = "Carta";
 
 const TABLE_STATUS_ES = { free: "Libre", reserved: "Reservada", occupied: "Ocupada" };
 const TABLE_STATUS_EN = { Libre: "free", Reservada: "reserved", Ocupada: "occupied" };
@@ -227,6 +229,81 @@ router.get(
       sort: [{ field: "UltimaVisita", direction: "desc" }],
     });
     res.json(records.map(toAppCustomer));
+  })
+);
+
+// ---------- Carta / Menú ----------
+// La carta vive en la tabla Carta de Airtable (editable desde el panel).
+// Los alérgenos se guardan como etiquetas del multiselect (ej. "Lácteos"),
+// idénticas a ALLERGIES_OPTIONS del frontend, así que pasan sin conversión.
+
+function toAppDish(rec) {
+  const f = rec.fields;
+  return {
+    id: rec.id,
+    name: f.Nombre || "",
+    category: f.Categoria || "",
+    description: f.Descripcion || "",
+    price: typeof f.Precio === "number" ? f.Precio : null,
+    allergens: f.Alergenos || [],
+    recommended: Boolean(f.Destacado),
+    // Airtable omite los checkbox desmarcados (los devuelve como undefined, no
+    // false), así que "disponible" es SOLO cuando el campo es explícitamente true.
+    available: f.Disponible === true,
+    order: typeof f.Orden === "number" ? f.Orden : 0,
+  };
+}
+
+function toCartaFields(body) {
+  const f = {};
+  if (body.name !== undefined) f.Nombre = body.name;
+  if (body.category !== undefined) f.Categoria = body.category;
+  if (body.description !== undefined) f.Descripcion = body.description;
+  if (body.price !== undefined) f.Precio = body.price === null || body.price === "" ? null : Number(body.price);
+  if (body.allergens !== undefined) f.Alergenos = body.allergens;
+  if (body.recommended !== undefined) f.Destacado = Boolean(body.recommended);
+  if (body.available !== undefined) f.Disponible = Boolean(body.available);
+  if (body.order !== undefined) f.Orden = body.order;
+  return f;
+}
+
+router.get(
+  "/api/menu",
+  handle(async (req, res) => {
+    // El panel ve TODOS los platos (incluidos los no disponibles).
+    const records = await airtable.listRecords(CARTA, {
+      sort: [{ field: "Orden", direction: "asc" }],
+    });
+    res.json(records.map(toAppDish));
+  })
+);
+
+router.post(
+  "/api/menu",
+  handle(async (req, res) => {
+    const rec = await airtable.createRecord(CARTA, toCartaFields(req.body), { typecast: true });
+    menuService.invalidateCache();
+    res.status(201).json(toAppDish(rec));
+  })
+);
+
+router.patch(
+  "/api/menu/:id",
+  handle(async (req, res) => {
+    const rec = await airtable.updateRecord(CARTA, req.params.id, toCartaFields(req.body), {
+      typecast: true,
+    });
+    menuService.invalidateCache();
+    res.json(toAppDish(rec));
+  })
+);
+
+router.delete(
+  "/api/menu/:id",
+  handle(async (req, res) => {
+    await airtable.deleteRecord(CARTA, req.params.id);
+    menuService.invalidateCache();
+    res.json({ deleted: true, id: req.params.id });
   })
 );
 

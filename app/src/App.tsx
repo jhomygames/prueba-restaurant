@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Table, Reservation, NotificationLog, TableStatus, Decoration } from './types';
 import { INITIAL_DECORATIONS } from './data';
 import * as api from './api';
-import { Customer } from './api';
+import { Customer, Dish } from './api';
 import { FloorPlan } from './components/FloorPlan';
 import { CalendarView } from './components/CalendarView';
 import { ReservationModal } from './components/ReservationModal';
@@ -40,6 +40,7 @@ export default function App() {
   const [tables, setTables] = useState<Table[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [menu, setMenu] = useState<Dish[]>([]);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
@@ -142,10 +143,11 @@ export default function App() {
     if (isPollingPaused.current || isRefreshing.current) return;
     isRefreshing.current = true;
     try {
-      const [remoteTables, remoteReservations, remoteCustomers] = await Promise.all([
+      const [remoteTables, remoteReservations, remoteCustomers, remoteMenu] = await Promise.all([
         api.fetchTables(),
         api.fetchReservations(),
         api.fetchCustomers(),
+        api.fetchMenu(),
       ]);
 
       // Detectar reservas nuevas llegadas por voz/WhatsApp para notificar
@@ -166,6 +168,7 @@ export default function App() {
       setTables(remoteTables);
       setReservations(remoteReservations);
       setCustomers(remoteCustomers);
+      setMenu(remoteMenu);
       setApiError(null);
       setIsLoaded(true);
     } catch (err: any) {
@@ -464,6 +467,54 @@ export default function App() {
     addNotificationLog(
       "Plano Actualizado",
       "Se ha eliminado el elemento decorativo del plano.",
+      'system'
+    );
+  };
+
+  // --- Menu / Carta Handlers (Airtable como única BD) ---
+  const handleCreateDish = async (dish: Omit<Dish, 'id'>) => {
+    try {
+      const created = await api.createDish(dish);
+      setMenu(prev => [...prev, created]);
+      addNotificationLog(
+        "Carta Actualizada",
+        `Se añadió "${created.name}" a la carta. Ya disponible para el agente de voz y WhatsApp.`,
+        'system'
+      );
+    } catch (err) {
+      console.error('createDish:', err);
+      alert('No se pudo guardar el plato en Airtable. Revisa la conexión.');
+    }
+  };
+
+  const handleUpdateDish = async (id: string, patch: Partial<Dish>) => {
+    try {
+      const updated = await api.updateDish(id, patch);
+      setMenu(prev => prev.map(d => d.id === id ? updated : d));
+      addNotificationLog(
+        "Carta Actualizada",
+        `Se actualizó "${updated.name}" en la carta.`,
+        'system'
+      );
+    } catch (err) {
+      console.error('updateDish:', err);
+      alert('No se pudo actualizar el plato en Airtable. Revisa la conexión.');
+    }
+  };
+
+  const handleDeleteDish = async (id: string) => {
+    const dish = menu.find(d => d.id === id);
+    try {
+      await api.deleteDish(id);
+    } catch (err) {
+      console.error('deleteDish:', err);
+      alert('No se pudo eliminar el plato en Airtable. Revisa la conexión.');
+      return;
+    }
+    setMenu(prev => prev.filter(d => d.id !== id));
+    addNotificationLog(
+      "Carta Actualizada",
+      `Se eliminó "${dish ? dish.name : 'un plato'}" de la carta.`,
       'system'
     );
   };
@@ -1119,6 +1170,10 @@ export default function App() {
           ) : activeTab === 'menu' ? (
             <div className="flex-1 h-full min-h-[450px]">
               <MenuView
+                menu={menu}
+                onCreateDish={handleCreateDish}
+                onUpdateDish={handleUpdateDish}
+                onDeleteDish={handleDeleteDish}
                 pdfFile={pdfFile}
                 pdfFileName={pdfFileName}
                 onPdfUpload={handlePdfUpload}

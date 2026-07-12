@@ -92,6 +92,17 @@ con dos canales que comparten el mismo backend y las mismas herramientas:
   agente↔cliente automáticamente, muestra la actividad de herramientas y, al crear la reserva,
   refresca el plano. Requiere `ANTHROPIC_API_KEY` (ya presente en Railway; sin ella los endpoints
   devuelven 500 agent_error/customer_error). Si se edita el prompt de voz, replicarlo en Vapi.
+- **Carta editable desde el panel (2026-07-12)**: la carta vive en la tabla `Carta` de
+  Airtable (esquema en AIRTABLE_SCHEMA.md), editable desde "Ver Carta" → "Editar carta"
+  (añadir/editar/eliminar platos, precio, alérgenos, destacado, disponible). `menu.json`
+  queda como semilla/fallback. Backend: `src/services/menuService.js` (getMenu con caché
+  60 s + fallback a menu.json + invalidateCache); `toolDispatcher.getMenuInfo` ahora lee de
+  ahí, así lo que edita el staff lo dice el agente de voz/WhatsApp en <60 s. Endpoints
+  `GET/POST/PATCH/DELETE /api/menu` en staffApi.js. El MenuView del panel ya NO usa datos
+  demo (se eliminó DEFAULT_MENU_ITEMS): renderiza desde la API con categorías y filtros de
+  alérgenos derivados de los datos reales. Ojo: Airtable omite checkbox desmarcados
+  (undefined, no false) → availability se mapea con `=== true`. Verificado end-to-end
+  (crear/editar/ocultar/eliminar contra Airtable real + el agente respeta Disponible).
 - **Automatizaciones**: híbrido Claude Code + Make.com. Toda la lógica de negocio vive en
   el backend (`src/routes/internalJobs.js`); Make.com solo actúa como "reloj" que dispara
   un HTTP POST por horario. Se decidió así para no depender de módulos frágiles de Make

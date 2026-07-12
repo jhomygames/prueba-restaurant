@@ -16,6 +16,18 @@ export interface Customer {
   visits: number;
 }
 
+export interface Dish {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  price: number | null;
+  allergens: string[];
+  recommended: boolean;
+  available: boolean;
+  order: number;
+}
+
 function headers(): Record<string, string> {
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
   const key = localStorage.getItem('dinecontrol_staff_key');
@@ -58,6 +70,19 @@ export const updateReservation = (id: string, patch: Partial<Reservation>) =>
 // ---------- Clientes ----------
 
 export const fetchCustomers = () => req<Customer[]>('/api/customers');
+
+// ---------- Carta / Menú ----------
+
+export const fetchMenu = () => req<Dish[]>('/api/menu');
+
+export const createDish = (d: Omit<Dish, 'id'>) =>
+  req<Dish>('/api/menu', { method: 'POST', body: JSON.stringify(d) });
+
+export const updateDish = (id: string, patch: Partial<Dish>) =>
+  req<Dish>(`/api/menu/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+
+export const deleteDish = (id: string) =>
+  req<{ deleted: boolean }>(`/api/menu/${id}`, { method: 'DELETE' });
 
 // Persistencia con debounce para el drag del plano: agrupa los updates de una
 // misma mesa y solo envía el último cuando el usuario deja de moverla.

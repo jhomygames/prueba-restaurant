@@ -7,7 +7,7 @@
 const reservations = require("./reservations");
 const customerMemory = require("./customerMemory");
 const { notifyStaff } = require("./transferToHuman");
-const menu = require("../config/menu.json");
+const menuService = require("./menuService");
 
 // Normaliza para comparar sin acentos ni mayúsculas ("Croquetas" ~ "croquetas", "César" ~ "cesar").
 function normalize(s) {
@@ -17,7 +17,9 @@ function normalize(s) {
     .replace(/[̀-ͯ]/g, "");
 }
 
-function getMenuInfo({ category, exclude_allergen, dish_name }) {
+async function getMenuInfo({ category, exclude_allergen, dish_name }) {
+  // La carta viene de Airtable (editable desde el panel), solo platos disponibles.
+  const menu = await menuService.getMenu();
   let categorias = menu.categorias;
 
   if (category) {

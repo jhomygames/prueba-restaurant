@@ -44,6 +44,28 @@ adelante si se necesita reportes/vistas de calendario nativas de Airtable.
 | UltimaVisita | Single line text o Date | ISO 8601 |
 | NumVisitas | Number | |
 
+## Tabla `Carta`
+
+La carta del restaurante (editable desde el panel → "Ver Carta" → "Editar carta").
+`src/config/menu.json` queda como semilla inicial y fallback si Airtable no responde.
+
+| Campo | Tipo | Notas |
+|---|---|---|
+| Nombre | Single line text | |
+| Categoria | Single select | Hamburguesa del mes, Entrantes, Burgers, Smash, Chicken burgers, Veggie burgers, Ensaladas, Para los peques, Postres, Cervezas, Refrescos, Vinos, Ginebras, Rones (se pueden crear nuevas al escribir) |
+| Descripcion | Long text | |
+| Precio | Number (precision 2) | euros; vacío = "según elección" (ej. smash) |
+| Alergenos | Multiple select | mismas opciones que `Reservas.Alergias` (14 alérgenos + Vegano/Vegetariano/Sin Sal) |
+| Destacado | Checkbox | badge "TOP" en el panel |
+| Disponible | Checkbox | solo los marcados los ve el agente y el cliente |
+| Orden | Number (precision 0) | orden dentro de la categoría |
+
+**Nota sobre `Disponible`**: Airtable omite los checkbox desmarcados (los devuelve
+como `undefined`, no `false`). El backend lo mapea con `=== true` (staffApi.js) y el
+agente filtra con `filterByFormula {Disponible} = TRUE()` (menuService.js). Los
+alérgenos son de EJEMPLO pendientes de validación por el restaurante (RD 126/2015);
+ahora el staff puede corregirlos desde la app.
+
 ## Cómo crearla
 
 1. En Airtable, crea una base vacía (nombre sugerido: "Restaurante Sandbox").
