@@ -98,6 +98,8 @@ export default function App() {
 
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+  // Reserva abierta desde el calendario (permite editar aunque no tenga mesa asignada)
+  const [editingReservation, setEditingReservation] = useState<Reservation | null>(null);
   const [isBookingModalOpen, setIsBookingModalOpen] = useState<boolean>(false);
   const [isCallOpen, setIsCallOpen] = useState<boolean>(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
@@ -132,10 +134,13 @@ export default function App() {
   // --- Carga inicial + polling desde Airtable (vía backend) ---
   const knownReservationIds = useRef<Set<string> | null>(null);
   const isPollingPaused = useRef(false);
+  const isRefreshing = useRef(false);
 
   const refreshFromServer = async (silent = true) => {
-    // No pisar el estado local mientras el usuario arrastra mesas o edita.
-    if (isPollingPaused.current) return;
+    // No pisar el estado local mientras el usuario arrastra mesas o edita,
+    // ni solapar dos refrescos si la red va lenta (respuestas fuera de orden).
+    if (isPollingPaused.current || isRefreshing.current) return;
+    isRefreshing.current = true;
     try {
       const [remoteTables, remoteReservations, remoteCustomers] = await Promise.all([
         api.fetchTables(),
@@ -167,6 +172,8 @@ export default function App() {
       console.error('Error sincronizando con Airtable:', err);
       setApiError(err.message || 'Error de conexión con el servidor');
       if (!silent) alert('No se pudo conectar con la base de datos (Airtable). Revisa el servidor.');
+    } finally {
+      isRefreshing.current = false;
     }
   };
 
@@ -201,9 +208,11 @@ export default function App() {
       if (isToleranceEnabled && r.status === 'confirmed' && r.date === today) {
         const rDateTime = new Date(r.date + 'T' + r.time + ':00');
         const diffMs = currentTime.getTime() - rDateTime.getTime();
-        
-        // If current time is 15 minutes past scheduled time
-        if (diffMs > 15 * 60 * 1000) {
+
+        // Solo dentro de la ventana 15min-2h de retraso. Sin el tope, abrir el
+        // panel a última hora cancelaría EN AIRTABLE todas las reservas viejas
+        // del día (las muy pasadas las cierra el job de reseñas del backend).
+        if (diffMs > 15 * 60 * 1000 && diffMs < 2 * 60 * 60 * 1000) {
           itemsToCancel.push(r.id);
         }
       }
@@ -228,25 +237,29 @@ export default function App() {
       itemsToComplete.forEach(id =>
         api.updateReservation(id, { status: 'completed' }).catch(err => console.error('auto-complete:', err))
       );
-      setReservations(prev => prev.map(r => {
+
+      // Notificar FUERA del updater de estado (los updaters deben ser puros:
+      // React puede ejecutarlos más de una vez y duplicaría las alertas).
+      reservations.forEach(r => {
+        const tableObj = tables.find(t => t.id === r.tableId);
         if (itemsToCancel.includes(r.id)) {
-          const tableObj = tables.find(t => t.id === r.tableId);
           addNotificationLog(
             "Tolerancia Excedida (Mesa Liberada)",
             `La mesa ${tableObj ? tableObj.name : 'asignada'} reservada para ${r.customerName} a las ${r.time} se ha liberado automáticamente por tardanza (tolerancia de 15 min superada).`,
             'system'
           );
-          return { ...r, status: 'cancelled' };
-        }
-        if (itemsToComplete.includes(r.id)) {
-          const tableObj = tables.find(t => t.id === r.tableId);
+        } else if (itemsToComplete.includes(r.id)) {
           addNotificationLog(
             "Mesa Liberada (Tiempo Finalizado)",
             `El tiempo de comida (${r.customDurationMinutes || defaultSeatedDuration} min) para ${r.customerName} en la ${tableObj ? tableObj.name : 'mesa'} ha finalizado. La mesa se liberó automáticamente.`,
             'system'
           );
-          return { ...r, status: 'completed' };
         }
+      });
+
+      setReservations(prev => prev.map(r => {
+        if (itemsToCancel.includes(r.id)) return { ...r, status: 'cancelled' };
+        if (itemsToComplete.includes(r.id)) return { ...r, status: 'completed' };
         return r;
       }));
     }
@@ -291,9 +304,14 @@ export default function App() {
   }, [reservations, selectedDate]);
 
   // --- Push Notification Handlers ---
+  // Contador para que dos notificaciones en el mismo milisegundo no
+  // compartan id (rompería las keys de React en la lista).
+  const notifSeq = useRef(0);
+  const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const addNotificationLog = (title: string, message: string, type: 'daily_reminder' | '15_min_before' | 'incoming_call' | 'system') => {
     const newNotif: NotificationLog = {
-      id: 'notif-' + Date.now(),
+      id: `notif-${Date.now()}-${++notifSeq.current}`,
       timestamp: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       type,
       title,
@@ -303,11 +321,13 @@ export default function App() {
 
     setNotifications(prev => [newNotif, ...prev]);
 
-    // Set floating banner alert
+    // Banner flotante: reiniciar el temporizador para que el timeout de una
+    // notificación anterior no borre antes de tiempo la más reciente.
     setBannerAlert({ title, msg: message, type });
-    // Auto dismiss banner after 5 seconds
-    setTimeout(() => {
+    if (bannerTimer.current) clearTimeout(bannerTimer.current);
+    bannerTimer.current = setTimeout(() => {
       setBannerAlert(null);
+      bannerTimer.current = null;
     }, 5000);
   };
 
@@ -324,7 +344,11 @@ export default function App() {
   // 1. Daily Morning Reminder Simulation
   const handleSimulateDailyReminder = () => {
     const today = new Date().toISOString().split('T')[0];
-    const todayBookings = reservations.filter(r => r.date === today && r.status === 'confirmed');
+    // Cuentan tanto las confirmadas (reciben recordatorio) como las
+    // pendientes (se auto-confirman en la simulación).
+    const todayBookings = reservations.filter(
+      r => r.date === today && (r.status === 'confirmed' || r.status === 'pending')
+    );
 
     if (todayBookings.length === 0) {
       addNotificationLog(
@@ -336,8 +360,8 @@ export default function App() {
     }
 
     // Auto update status to confirmed for simulated customers (y persistir)
-    reservations
-      .filter(r => r.date === today && r.status === 'pending')
+    todayBookings
+      .filter(r => r.status === 'pending')
       .forEach(r =>
         api.updateReservation(r.id, { status: 'confirmed' }).catch(err => console.error('confirm:', err))
       );
@@ -974,7 +998,7 @@ export default function App() {
                         </div>
                         <div>
                           <h4 className="font-sans font-bold text-xs text-brand-text">Simular LLAMADA AI</h4>
-                          <p className="text-[9px] text-brand-muted">Reserva telefónica con Gemini</p>
+                          <p className="text-[9px] text-brand-muted">Agente real (Claude) + reserva en Airtable</p>
                         </div>
                       </div>
                       <span className="text-[9px] font-mono text-brand-secondary font-bold animate-pulse shrink-0">
@@ -1083,7 +1107,8 @@ export default function App() {
                 selectedDate={selectedDate}
                 onSelectDate={setSelectedDate}
                 onEditReservation={(res) => {
-                  setSelectedTableId(res.tableId);
+                  setEditingReservation(res);
+                  setSelectedTableId(res.tableId || null);
                   setIsBookingModalOpen(true);
                 }}
                 onCancelReservation={handleCancelReservation}
@@ -1117,9 +1142,10 @@ export default function App() {
         onClose={() => {
           setIsBookingModalOpen(false);
           setSelectedTableId(null);
+          setEditingReservation(null);
         }}
         table={tables.find(t => t.id === selectedTableId) || null}
-        activeReservation={getActiveReservationForSelectedTable()}
+        activeReservation={editingReservation ?? getActiveReservationForSelectedTable()}
         onSaveReservation={handleSaveReservation}
         onCancelReservation={handleCancelReservation}
         onSeatedReservation={handleSeatedReservation}

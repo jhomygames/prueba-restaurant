@@ -72,7 +72,9 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
     }
   }, [isOpen, activeReservation, table]);
 
-  if (!isOpen || !table) return null;
+  // Sin mesa solo tiene sentido si estamos editando una reserva existente
+  // (p. ej. una reserva del calendario cuya mesa fue eliminada del plano).
+  if (!isOpen || (!table && !activeReservation)) return null;
 
   const handleQuickSeating = () => {
     if (!table) return;
@@ -115,7 +117,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
       date,
       time,
       pax,
-      tableId: table.id,
+      tableId: table ? table.id : (activeReservation?.tableId ?? ''),
       status: activeReservation ? activeReservation.status : 'confirmed',
       notes: notes.trim(),
       allergies,
@@ -162,7 +164,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
             <div className="p-4 bg-brand-surface-low border-b border-brand-outline flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono px-2 py-0.5 bg-brand-primary/10 border border-brand-primary/30 text-brand-primary rounded font-bold">
-                  {table.name}
+                  {table ? table.name : 'Sin mesa asignada'}
                 </span>
                 <h3 className="font-sans font-bold text-sm text-brand-text">
                   {activeReservation ? 'Gestionar Reserva' : 'Nueva Reserva de Mesa'}
@@ -181,7 +183,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
             <div className="flex-1 p-5 overflow-y-auto space-y-4">
               
               {/* Quick Walk-in Option */}
-              {!activeReservation && (
+              {!activeReservation && table && (
                 <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shrink-0">
                   <div className="space-y-0.5">
                     <h4 className="text-xs font-sans font-bold text-emerald-300 flex items-center gap-1.5">
@@ -203,7 +205,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
               )}
 
               {/* Warnings if pax exceeds table capacity */}
-              {pax > table.seats && (
+              {table && pax > table.seats && (
                 <div className="flex items-start gap-2 bg-brand-tertiary/10 border border-brand-tertiary/30 p-2.5 rounded-lg text-xs text-brand-tertiary">
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                   <div>
@@ -461,7 +463,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
                   </button>
                 )}
                 
-                {!activeReservation && (
+                {!activeReservation && table && (
                   <button
                     type="button"
                     onClick={() => {

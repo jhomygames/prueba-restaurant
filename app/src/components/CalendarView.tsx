@@ -181,6 +181,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 className={`p-3.5 border rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all relative overflow-hidden group ${
                   res.status === 'completed'
                     ? 'border-brand-outline bg-brand-surface-high/30 opacity-70'
+                    : res.status === 'cancelled'
+                    ? 'border-red-500/20 bg-brand-surface-high/20 opacity-60'
                     : res.status === 'seated'
                     ? 'border-brand-secondary/30 bg-brand-secondary/5'
                     : 'border-brand-outline bg-brand-surface-high hover:border-brand-muted/30'
@@ -214,11 +216,19 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     <span className={`text-[9px] uppercase font-mono px-1.5 py-0.5 rounded font-bold ${
                       res.status === 'completed'
                         ? 'bg-brand-outline text-brand-muted'
+                        : res.status === 'cancelled'
+                        ? 'bg-red-500/10 text-red-400 border border-red-500/30'
                         : res.status === 'seated'
                         ? 'bg-brand-secondary/15 text-brand-secondary border border-brand-secondary/30'
+                        : res.status === 'pending'
+                        ? 'bg-brand-outline/50 text-brand-muted border border-brand-outline'
                         : 'bg-brand-tertiary/15 text-brand-tertiary border border-brand-tertiary/30'
                     }`}>
-                      {res.status === 'completed' ? 'Completado' : res.status === 'seated' ? 'Sentado' : 'Confirmado'}
+                      {res.status === 'completed' ? 'Completado'
+                        : res.status === 'cancelled' ? 'Cancelado'
+                        : res.status === 'seated' ? 'Sentado'
+                        : res.status === 'pending' ? 'Pendiente'
+                        : 'Confirmado'}
                     </span>
                   </div>
 
@@ -268,17 +278,19 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     </button>
                   )}
 
-                  {/* Edit */}
-                  <button
-                    onClick={() => onEditReservation(res)}
-                    title="Editar reserva"
-                    className="flex items-center justify-center p-2 bg-brand-surface-high hover:bg-brand-surface-highest border border-brand-outline hover:border-brand-muted/40 text-brand-text rounded-lg cursor-pointer transition-all"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </button>
+                  {/* Edit (las canceladas ya no se editan) */}
+                  {res.status !== 'cancelled' && (
+                    <button
+                      onClick={() => onEditReservation(res)}
+                      title="Editar reserva"
+                      className="flex items-center justify-center p-2 bg-brand-surface-high hover:bg-brand-surface-highest border border-brand-outline hover:border-brand-muted/40 text-brand-text rounded-lg cursor-pointer transition-all"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                  )}
 
                   {/* Delete */}
-                  {res.status !== 'completed' && (
+                  {res.status !== 'completed' && res.status !== 'cancelled' && (
                     <button
                       onClick={() => {
                         if (confirm('¿Estás seguro de cancelar esta reserva?')) {
