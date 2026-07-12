@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Table, TableShape, TableStatus, Reservation, Decoration, DecorationType } from '../types';
-import { Plus, Trash2, RotateCw, Edit3, Check, Eye, HelpCircle, Sprout, Sofa, Columns3 } from 'lucide-react';
+import { Plus, Trash2, RotateCw, Edit3, Check, Eye, HelpCircle, Sprout, Sofa, Columns3, ZoomIn, Maximize2, Minus } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export interface PlantModelInfo {
@@ -215,6 +215,19 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
   isToleranceEnabled = true,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Zoom del plano: en pantallas estrechas (móvil) el lienzo mantiene sus
+  // proporciones (ancho/alto mínimos) y se puede desplazar y ampliar para que
+  // las mesas no se solapen. En escritorio, a zoom 1 ocupa el 100% como antes.
+  const ZOOM_MIN = 0.7;
+  const ZOOM_MAX = 2;
+  const BASE_W = 600; // ancho de referencia del plano (px) a zoom 1
+  const BASE_H = 460; // alto de referencia del plano (px) a zoom 1
+  const [zoom, setZoom] = useState<number>(1);
+  const zoomIn = () => setZoom((z) => Math.min(ZOOM_MAX, +(z + 0.2).toFixed(2)));
+  const zoomOut = () => setZoom((z) => Math.max(ZOOM_MIN, +(z - 0.2).toFixed(2)));
+  const zoomReset = () => setZoom(1);
+
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [activeDragType, setActiveDragType] = useState<'table' | 'decoration' | null>(null);
   const [editingPropertiesId, setEditingPropertiesId] = useState<string | null>(null);
@@ -524,15 +537,21 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
 
       {/* Main Floor Grid Area */}
       <div className="flex-1 relative overflow-hidden flex flex-col md:flex-row h-full min-h-[450px]">
-        
-        {/* Canvas */}
-        <div
-          ref={containerRef}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          className="flex-1 relative grid-canvas bg-brand-surface-lowest p-6 h-full select-none"
-          id="floor-plan-canvas"
-        >
+
+        {/* Canvas area: scrolleable, con el escenario dimensionado por zoom dentro */}
+        <div className="flex-1 relative overflow-hidden">
+          <div className="absolute inset-0 overflow-auto">
+            <div
+              ref={containerRef}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              style={{
+                width: `max(100%, ${Math.round(BASE_W * zoom)}px)`,
+                height: `max(100%, ${Math.round(BASE_H * zoom)}px)`,
+              }}
+              className="relative grid-canvas bg-brand-surface-lowest p-6 select-none"
+              id="floor-plan-canvas"
+            >
           {/* Section labels */}
           <div className="absolute top-4 left-6 pointer-events-none text-[10px] font-mono text-brand-muted/30 tracking-widest uppercase">
             SALA PRINCIPAL
@@ -761,6 +780,38 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
               </div>
             );
           })}
+            </div>
+          </div>
+
+          {/* Controles de Zoom (flotan sobre el lienzo) */}
+          <div className="absolute bottom-3 right-3 z-30 flex flex-col items-center bg-brand-surface/90 backdrop-blur border border-brand-outline rounded-xl shadow-lg overflow-hidden">
+            <button
+              onClick={zoomIn}
+              disabled={zoom >= ZOOM_MAX}
+              title="Acercar"
+              className="p-2 text-brand-text hover:bg-brand-surface-high disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              <ZoomIn className="w-4 h-4" />
+            </button>
+            <div className="w-full px-2 py-1 text-center text-[9px] font-mono text-brand-muted border-y border-brand-outline/60 tabular-nums">
+              {Math.round(zoom * 100)}%
+            </div>
+            <button
+              onClick={zoomOut}
+              disabled={zoom <= ZOOM_MIN}
+              title="Alejar"
+              className="p-2 text-brand-text hover:bg-brand-surface-high disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              <Minus className="w-4 h-4" />
+            </button>
+            <button
+              onClick={zoomReset}
+              title="Ajustar / restablecer"
+              className="p-2 text-brand-primary hover:bg-brand-surface-high border-t border-brand-outline/60 transition-colors cursor-pointer"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Sidebar property editor in Edit Mode */}
