@@ -1,0 +1,6 @@
+{
+  "name": "DineControl AI",
+  "description": "Un sistema avanzado e intuitivo para el control de reservas de restaurante, con plano interactivo de mesas, calendario de citas, y simulación de notificaciones de recordatorios y confirmación automática.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

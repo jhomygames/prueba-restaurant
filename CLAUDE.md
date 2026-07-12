@@ -60,6 +60,27 @@ con dos canales que comparten el mismo backend y las mismas herramientas:
   (startSpeakingPlan/stopSpeakingPlan) y voz con stability 0.5 / similarityBoost 0.75.
   La voz concreta (voiceId) sigue siendo la default Rachel de 11labs: el usuario quiere
   elegirla escuchándolas en dashboard.vapi.ai → Assistant → Voice.
+- **Prompt de voz v2 (2026-07-11)**: reescrito y aplicado vía PATCH al assistant. Cambios
+  clave: identidad con nombre ("María"), flujo de reserva en 5 pasos numerados donde el
+  paso 3 (preguntar alergias/intolerancias/dietas) y el paso 4 (confirmar todos los datos
+  en voz alta y esperar un "sí" explícito) son OBLIGATORIOS antes de create_reservation,
+  manejo de modificaciones (cancelar + recrear), protocolo de errores de herramientas
+  (transferir a humano sin dramatizar), y límites (no prometer nada no confirmable).
+- **Panel de staff integrado (2026-07-12)**: la app "DineControl AI" (antes repo
+  jhomygames/Restaurant-Manager) vive ahora en `app/` (React 19 + Vite + Tailwind) y se
+  sirve como estáticos desde el mismo Express en `/` (build en `app/dist`, script `build`
+  del package.json raíz la compila en Railway). Airtable es la ÚNICA base de datos: la SPA
+  ya no usa localStorage para mesas/reservas (solo para decoraciones del plano y el PDF de
+  la carta). Consume `src/routes/staffApi.js` (`/api/tables` CRUD completo incl. DELETE,
+  `/api/reservations` GET/POST/PATCH, `/api/customers` GET, `/api/call/simulate` mock sin
+  Gemini) con polling cada 20 s — así las reservas creadas por voz/WhatsApp aparecen solas
+  y generan notificación. El editor del plano persiste en Airtable (drag con debounce
+  700 ms; crear/borrar mesa = crear/borrar registro en Mesas). Campos añadidos vía Meta
+  API: Mesas.PosX/PosY/Forma/Rotacion; Reservas.SentadaAt/Alergias/DuracionMin. Estados de
+  reserva ampliados a pendiente/sentada (se crean vía typecast:true, la Meta API no deja
+  ampliar selects). Mapeo ES↔EN en staffApi.js. Las 15 mesas del plano original de la app
+  (7 sala + 4 barra + 4 terraza) están sembradas en Airtable. STAFF_API_KEY opcional
+  (si se define, la API exige header x-staff-key; sin definir queda abierta — sandbox).
 - **Automatizaciones**: híbrido Claude Code + Make.com. Toda la lógica de negocio vive en
   el backend (`src/routes/internalJobs.js`); Make.com solo actúa como "reloj" que dispara
   un HTTP POST por horario. Se decidió así para no depender de módulos frágiles de Make

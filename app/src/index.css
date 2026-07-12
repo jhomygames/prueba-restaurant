@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Custom Color Bindings according to Elegant Dark Design System */
+  --color-brand-bg: #0F0F10;
+  --color-brand-surface: #161618;
+  --color-brand-surface-low: #101012;
+  --color-brand-surface-high: #1c1c1f;
+  --color-brand-surface-highest: #2c2c30;
+  --color-brand-surface-lowest: #080809;
+  
+  --color-brand-primary: #f59e0b; /* Elegant Amber/Gold (Primary Brand Accent) */
+  --color-brand-secondary: #ef4444; /* Rose/Red (Occupied & Destructive/Alert) */
+  --color-brand-tertiary: #f59e0b; /* Amber (Reserved) */
+  --color-brand-text: #f4f4f5; /* Zinc-100 */
+  --color-brand-muted: #a1a1aa; /* Zinc-400 */
+  --color-brand-outline: rgba(255, 255, 255, 0.05); /* Very subtle transparent borders */
+}
+
+/* Custom Grid Background styling */
+.grid-canvas {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #101012;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #f59e0b;
+}
+

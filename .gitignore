@@ -1,3 +1,5 @@
 node_modules/
 .env
 *.log
+app/dist/
+app/node_modules/

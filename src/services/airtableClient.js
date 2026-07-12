@@ -73,20 +73,27 @@ async function getRecord(table, recordId) {
   return airtableFetch(table, `/${recordId}`);
 }
 
-async function createRecord(table, fields) {
+// typecast:true deja que Airtable cree opciones nuevas de single/multiple
+// select sobre la marcha (necesario para Estados "pendiente"/"sentada" y
+// Alergias que la Meta API no permite pre-crear en selects existentes).
+async function createRecord(table, fields, { typecast = false } = {}) {
   const data = await airtableFetch(table, "", {
     method: "POST",
-    body: JSON.stringify({ fields }),
+    body: JSON.stringify({ fields, typecast }),
   });
   return data;
 }
 
-async function updateRecord(table, recordId, fields) {
+async function updateRecord(table, recordId, fields, { typecast = false } = {}) {
   const data = await airtableFetch(table, `/${recordId}`, {
     method: "PATCH",
-    body: JSON.stringify({ fields }),
+    body: JSON.stringify({ fields, typecast }),
   });
   return data;
 }
 
-module.exports = { listRecords, getRecord, createRecord, updateRecord };
+async function deleteRecord(table, recordId) {
+  return airtableFetch(table, `/${recordId}`, { method: "DELETE" });
+}
+
+module.exports = { listRecords, getRecord, createRecord, updateRecord, deleteRecord };
