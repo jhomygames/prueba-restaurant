@@ -45,14 +45,14 @@ function toReservationShape(record) {
   };
 }
 
-async function findAvailableTable(date, time, party_size) {
+async function findAvailableTable(ctx, date, time, party_size) {
   const targetFH = fechaHoraKey(date, time);
 
   const [mesas, reservasEnEseHorario] = await Promise.all([
-    listRecords(TABLE_MESAS, {
+    listRecords(ctx.baseId, TABLE_MESAS, {
       filterByFormula: `AND({Capacidad} >= ${Number(party_size)}, {Estado} != 'Fuera de servicio')`,
     }),
-    listRecords(TABLE_RESERVAS, {
+    listRecords(ctx.baseId, TABLE_RESERVAS, {
       filterByFormula: `AND({FechaHora} = '${targetFH}', {Estado} = 'confirmada')`,
     }),
   ]);
@@ -65,8 +65,8 @@ async function findAvailableTable(date, time, party_size) {
   return mesaLibre || null;
 }
 
-async function checkAvailability({ date, time, party_size }) {
-  const mesa = await findAvailableTable(date, time, party_size);
+async function checkAvailability(ctx, { date, time, party_size }) {
+  const mesa = await findAvailableTable(ctx, date, time, party_size);
   return {
     available: Boolean(mesa),
     date,
@@ -77,13 +77,13 @@ async function checkAvailability({ date, time, party_size }) {
   };
 }
 
-async function createReservation({ date, time, party_size, customer_name, customer_phone, notes }) {
-  const mesa = await findAvailableTable(date, time, party_size);
+async function createReservation(ctx, { date, time, party_size, customer_name, customer_phone, notes }) {
+  const mesa = await findAvailableTable(ctx, date, time, party_size);
   if (!mesa) {
     return { created: false, reason: "no_availability" };
   }
 
-  const record = await createRecord(TABLE_RESERVAS, {
+  const record = await createRecord(ctx.baseId, TABLE_RESERVAS, {
     FechaHora: fechaHoraKey(date, time),
     Personas: party_size,
     ClienteNombre: customer_name,
@@ -96,13 +96,13 @@ async function createReservation({ date, time, party_size, customer_name, custom
   return { created: true, ...toReservationShape(record), table: mesa.fields.Nombre };
 }
 
-async function cancelReservation({ reservation_id, customer_phone, date }) {
+async function cancelReservation(ctx, { reservation_id, customer_phone, date }) {
   let record;
 
   if (reservation_id) {
     record = { id: reservation_id };
   } else {
-    const candidates = await listRecords(TABLE_RESERVAS, {
+    const candidates = await listRecords(ctx.baseId, TABLE_RESERVAS, {
       filterByFormula: `AND({ClienteTelefono} = '${customer_phone}', LEFT({FechaHora}, 10) = '${date}', {Estado} = 'confirmada')`,
     });
     record = candidates[0];
@@ -112,7 +112,7 @@ async function cancelReservation({ reservation_id, customer_phone, date }) {
     return { cancelled: false, reason: "not_found" };
   }
 
-  const updated = await updateRecord(TABLE_RESERVAS, record.id, { Estado: "cancelada" });
+  const updated = await updateRecord(ctx.baseId, TABLE_RESERVAS, record.id, { Estado: "cancelada" });
   return { cancelled: true, reservation: toReservationShape(updated) };
 }
 
@@ -121,9 +121,9 @@ async function cancelReservation({ reservation_id, customer_phone, date }) {
  * futuro. El rango evita solapes entre el recordatorio de 24h y el de 1h
  * (una reserva a 30 min NO debe recibir el mensaje de "mañana").
  */
-async function getUpcomingReservations({ hoursAhead, hoursFloor = 0 }) {
+async function getUpcomingReservations(ctx, { hoursAhead, hoursFloor = 0 }) {
   const now = Date.now();
-  const confirmadas = await listRecords(TABLE_RESERVAS, {
+  const confirmadas = await listRecords(ctx.baseId, TABLE_RESERVAS, {
     filterByFormula: `{Estado} = 'confirmada'`,
   });
 
@@ -142,9 +142,9 @@ async function getUpcomingReservations({ hoursAhead, hoursFloor = 0 }) {
  * tras enviar el mensaje, para que la petición sea idempotente entre
  * ejecuciones de Make cada 15 min.
  */
-async function getRecentlyCompletedVisits({ hoursAgo }) {
+async function getRecentlyCompletedVisits(ctx, { hoursAgo }) {
   const now = Date.now();
-  const candidatas = await listRecords(TABLE_RESERVAS, {
+  const candidatas = await listRecords(ctx.baseId, TABLE_RESERVAS, {
     filterByFormula: `AND({Estado} = 'confirmada', {ResenaPedida} = FALSE())`,
   });
 
@@ -161,8 +161,8 @@ async function getRecentlyCompletedVisits({ hoursAgo }) {
  * Marca flags de control sobre una reserva (Recordatorio24h, Recordatorio1h,
  * ResenaPedida, Estado...). `fields` usa los nombres de campo de Airtable.
  */
-async function markReservation(reservationId, fields) {
-  const updated = await updateRecord(TABLE_RESERVAS, reservationId, fields);
+async function markReservation(ctx, reservationId, fields) {
+  const updated = await updateRecord(ctx.baseId, TABLE_RESERVAS, reservationId, fields);
   return toReservationShape(updated);
 }
 

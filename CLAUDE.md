@@ -79,8 +79,8 @@ con dos canales que comparten el mismo backend y las mismas herramientas:
   API: Mesas.PosX/PosY/Forma/Rotacion; Reservas.SentadaAt/Alergias/DuracionMin. Estados de
   reserva ampliados a pendiente/sentada (se crean vía typecast:true, la Meta API no deja
   ampliar selects). Mapeo ES↔EN en staffApi.js. Las 15 mesas del plano original de la app
-  (7 sala + 4 barra + 4 terraza) están sembradas en Airtable. STAFF_API_KEY opcional
-  (si se define, la API exige header x-staff-key; sin definir queda abierta — sandbox).
+  (7 sala + 4 barra + 4 terraza) están sembradas en Airtable. El panel exige login
+  (ver decisión multi-restaurante más abajo).
 - **Simulador de llamada migrado a Claude (2026-07-12)**: el "Simular LLAMADA AI" del panel
   ya no usa Gemini ni mocks. La recepcionista del simulador ES el agente real: `src/routes/callSim.js`
   ejecuta a María con el prompt de voz compartido (`src/config/voicePrompt.js`, misma versión que
@@ -103,6 +103,22 @@ con dos canales que comparten el mismo backend y las mismas herramientas:
   alérgenos derivados de los datos reales. Ojo: Airtable omite checkbox desmarcados
   (undefined, no false) → availability se mapea con `=== true`. Verificado end-to-end
   (crear/editar/ocultar/eliminar contra Airtable real + el agente respeta Disponible).
+- **MULTI-RESTAURANTE con login (2026-07-21)**: el sistema sirve a varios locales a la vez.
+  Arquitectura: **una base de Airtable por restaurante** + base central `Registro`
+  (`REGISTRO_BASE_ID`, tablas `Restaurantes` y `Usuarios`; esquema en AIRTABLE_SCHEMA.md).
+  Elegido frente a "una base con campo RestauranteId" porque el aislamiento no depende de
+  recordar un filtro en cada fórmula. Piezas nuevas: `services/registry.js` (resuelve tenants,
+  caché 60 s), `services/secretBox.js` (AES-256-GCM para credenciales por local),
+  `routes/auth.js` (login JWT 7 días, bcrypt, rate-limit), `routes/settingsApi.js` +
+  `components/SettingsView.tsx` (pestaña Configuración: cada local conecta SU Vapi y SU
+  WhatsApp), `services/vapiAdmin.js` (crear/actualizar assistant), `scripts/setup-registro.js`
+  y `scripts/provision-restaurant.js` (alta de locales).
+  Reglas duras: `airtableClient` exige `baseId` como primer parámetro (si falta, lanza: mejor
+  romper que escribir en la base equivocada); el tenant en `/api/*` sale SIEMPRE del JWT, nunca
+  del body/query; los canales sin sesión lo resuelven por assistantId (Vapi) o por el número
+  destino `To` (WhatsApp); `internalJobs` recorre los locales activos aislando errores (un
+  restaurante caído no impide procesar el resto). Envs nuevas: `AUTH_JWT_SECRET`,
+  `TENANT_SECRETS_KEY`, `REGISTRO_BASE_ID`. Se retiró `STAFF_API_KEY`/`x-staff-key`.
 - **Automatizaciones**: híbrido Claude Code + Make.com. Toda la lógica de negocio vive en
   el backend (`src/routes/internalJobs.js`); Make.com solo actúa como "reloj" que dispara
   un HTTP POST por horario. Se decidió así para no depender de módulos frágiles de Make

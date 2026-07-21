@@ -29,7 +29,8 @@ const LABEL_TO_KEY = {
   "Vegano": "vegano", "Vegetariano": "vegetariano", "Sin Sal": "sin_sal",
 };
 
-let cache = null; // { at:number, menu:object }
+// Caché POR RESTAURANTE: cada tenant tiene su propia carta en su propia base.
+const cache = new Map(); // baseId -> { at:number, menu:object }
 
 function alergenoToKey(label) {
   return LABEL_TO_KEY[label] || String(label).toLowerCase();
@@ -76,16 +77,20 @@ function recordsToMenu(records) {
  * Devuelve la carta agrupada. Por defecto solo platos disponibles (lo que ven
  * los agentes). Cachea el resultado de `disponibles` durante TTL_MS.
  */
-async function getMenu({ includeUnavailable = false } = {}) {
-  if (!includeUnavailable && cache && Date.now() - cache.at < TTL_MS) {
-    return cache.menu;
+async function getMenu(ctx, { includeUnavailable = false } = {}) {
+  const baseId = ctx && ctx.baseId;
+  if (!baseId) throw new Error("menuService.getMenu: falta el contexto del restaurante (baseId).");
+
+  const cached = cache.get(baseId);
+  if (!includeUnavailable && cached && Date.now() - cached.at < TTL_MS) {
+    return cached.menu;
   }
 
   try {
     const filter = includeUnavailable ? {} : { filterByFormula: "{Disponible} = TRUE()" };
-    const records = await listRecords(TABLE, filter);
+    const records = await listRecords(baseId, TABLE, filter);
     const menu = recordsToMenu(records);
-    if (!includeUnavailable) cache = { at: Date.now(), menu };
+    if (!includeUnavailable) cache.set(baseId, { at: Date.now(), menu });
     return menu;
   } catch (err) {
     console.error("[menuService] Airtable falló, usando menu.json de fallback:", err.message);
@@ -93,8 +98,10 @@ async function getMenu({ includeUnavailable = false } = {}) {
   }
 }
 
-function invalidateCache() {
-  cache = null;
+/** Invalida la caché de un restaurante (o de todos si no se pasa baseId). */
+function invalidateCache(baseId) {
+  if (baseId) cache.delete(baseId);
+  else cache.clear();
 }
 
 module.exports = { getMenu, invalidateCache };

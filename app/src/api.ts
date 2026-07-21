@@ -28,21 +28,78 @@ export interface Dish {
   order: number;
 }
 
+// ---------- Sesión ----------
+
+const TOKEN_KEY = 'dinecontrol_token';
+
+export interface Session {
+  token: string;
+  user: { email: string; nombre?: string; rol?: string };
+  restaurant: { slug: string; nombre: string };
+}
+
+export const getToken = () => localStorage.getItem(TOKEN_KEY);
+export const setToken = (t: string) => localStorage.setItem(TOKEN_KEY, t);
+export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+
+// Se dispara cuando el backend responde 401: App.tsx vuelve al login.
+type UnauthorizedHandler = () => void;
+let onUnauthorized: UnauthorizedHandler = () => {};
+export const setUnauthorizedHandler = (fn: UnauthorizedHandler) => {
+  onUnauthorized = fn;
+};
+
 function headers(): Record<string, string> {
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
-  const key = localStorage.getItem('dinecontrol_staff_key');
-  if (key) h['x-staff-key'] = key;
+  const token = getToken();
+  if (token) h['Authorization'] = `Bearer ${token}`;
   return h;
 }
 
 async function req<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(path, { headers: headers(), ...options });
+  if (res.status === 401) {
+    clearToken();
+    onUnauthorized();
+    throw new Error('sesion_expirada');
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`API ${options.method || 'GET'} ${path} -> ${res.status}: ${body}`);
   }
   return res.json();
 }
+
+// ---------- Autenticación ----------
+
+export async function login(email: string, password: string): Promise<Session> {
+  const res = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const map: Record<string, string> = {
+      credenciales_invalidas: 'Email o contraseña incorrectos.',
+      demasiados_intentos: 'Demasiados intentos. Espera unos minutos.',
+      restaurante_inactivo: 'Este restaurante está desactivado.',
+      faltan_credenciales: 'Escribe tu email y tu contraseña.',
+    };
+    throw new Error(map[body.error] || 'No se pudo iniciar sesión.');
+  }
+  setToken(body.token);
+  return body as Session;
+}
+
+export const fetchMe = () =>
+  req<{ user: any; restaurant: { slug: string; nombre: string } }>('/api/auth/me');
+
+export const changePassword = (currentPassword: string, newPassword: string) =>
+  req<{ ok: boolean }>('/api/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
 
 // ---------- Mesas ----------
 
@@ -83,6 +140,58 @@ export const updateDish = (id: string, patch: Partial<Dish>) =>
 
 export const deleteDish = (id: string) =>
   req<{ deleted: boolean }>(`/api/menu/${id}`, { method: 'DELETE' });
+
+// ---------- Configuración del restaurante (integraciones) ----------
+
+export interface RestaurantSettings {
+  slug: string;
+  nombre: string;
+  googleReviewUrl: string;
+  staffWhatsApp: string;
+  voz: {
+    configured: boolean;
+    assistantId: string;
+    telefono: string;
+    apiKeyPropia: boolean;
+    apiKeyMasked: string;
+  };
+  whatsapp: {
+    configured: boolean;
+    accountSid: string;
+    from: string;
+    authTokenMasked: string;
+    webhookUrl: string;
+  };
+}
+
+export const fetchSettings = () => req<RestaurantSettings>('/api/settings');
+
+export const saveSettings = (patch: Partial<Pick<RestaurantSettings, 'nombre' | 'googleReviewUrl' | 'staffWhatsApp'>>) =>
+  req<RestaurantSettings>('/api/settings', { method: 'PUT', body: JSON.stringify(patch) });
+
+export const saveVapiKey = (apiKey: string | null) =>
+  req<RestaurantSettings>('/api/settings/vapi', { method: 'PUT', body: JSON.stringify({ apiKey }) });
+
+export const provisionVapi = () =>
+  req<RestaurantSettings & { aviso: string | null }>('/api/settings/vapi/provision', { method: 'POST' });
+
+export const syncVapiPrompt = () =>
+  req<{ ok: boolean }>('/api/settings/vapi/sync-prompt', { method: 'POST' });
+
+export const testVapi = () =>
+  req<{ ok: boolean; nombre?: string; modelo?: string; voz?: string; error?: string }>(
+    '/api/settings/vapi/test',
+    { method: 'POST' }
+  );
+
+export const saveWhatsApp = (data: { accountSid?: string; authToken?: string; from?: string }) =>
+  req<RestaurantSettings>('/api/settings/whatsapp', { method: 'PUT', body: JSON.stringify(data) });
+
+export const testWhatsApp = (to: string) =>
+  req<{ ok: boolean; sid?: string; estado?: string; error?: string }>('/api/settings/whatsapp/test', {
+    method: 'POST',
+    body: JSON.stringify({ to }),
+  });
 
 // Persistencia con debounce para el drag del plano: agrupa los updates de una
 // misma mesa y solo envía el último cuando el usuario deja de moverla.

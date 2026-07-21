@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Table, Reservation, NotificationLog, TableStatus, Decoration } from './types';
 import { INITIAL_DECORATIONS } from './data';
 import * as api from './api';
-import { Customer, Dish } from './api';
+import { Customer, Dish, Session } from './api';
 import { FloorPlan } from './components/FloorPlan';
 import { CalendarView } from './components/CalendarView';
 import { ReservationModal } from './components/ReservationModal';
@@ -10,6 +10,8 @@ import { NotificationCenter } from './components/NotificationCenter';
 import { CallSimulator } from './components/CallSimulator';
 import { MenuView } from './components/MenuView';
 import { CustomersView } from './components/CustomersView';
+import { SettingsView } from './components/SettingsView';
+import { LoginView } from './components/LoginView';
 import { 
   UtensilsCrossed, 
   Layers, 
@@ -27,7 +29,9 @@ import {
   BookOpen,
   Upload,
   FileText,
-  Users
+  Users,
+  Settings as SettingsIcon,
+  LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -35,7 +39,10 @@ import { motion, AnimatePresence } from 'motion/react';
 // Así las reservas creadas por el agente de voz o WhatsApp aparecen solas.
 const POLL_INTERVAL_MS = 20000;
 
-export default function App() {
+const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, onLogout }) => {
+  // Claves de localStorage namespaceadas por local: dos restaurantes en el
+  // mismo navegador no deben pisarse la decoración ni los ajustes.
+  const ns = (k: string) => `dinecontrol_${session.restaurant.slug}_${k}`;
   // --- Estado remoto: Airtable es la única base de datos ---
   const [tables, setTables] = useState<Table[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
@@ -46,43 +53,43 @@ export default function App() {
 
   // Las decoraciones del plano son cosméticas: se quedan en localStorage.
   const [decorations, setDecorations] = useState<Decoration[]>(() => {
-    const saved = localStorage.getItem('dinecontrol_decorations');
+    const saved = localStorage.getItem(ns('decorations'));
     return saved ? JSON.parse(saved) : INITIAL_DECORATIONS;
   });
 
   const [isToleranceEnabled, setIsToleranceEnabled] = useState<boolean>(() => {
-    const saved = localStorage.getItem('dinecontrol_tolerance_enabled');
+    const saved = localStorage.getItem(ns('tolerance_enabled'));
     return saved ? JSON.parse(saved) : true;
   });
 
   const [defaultSeatedDuration, setDefaultSeatedDuration] = useState<number>(() => {
-    const saved = localStorage.getItem('dinecontrol_default_seated_duration');
+    const saved = localStorage.getItem(ns('default_seated_duration'));
     return saved ? JSON.parse(saved) : 120; // 2 hours by default
   });
 
   const [notifications, setNotifications] = useState<NotificationLog[]>([]);
 
   // --- UI Layout States ---
-  const [activeTab, setActiveTab] = useState<'floor' | 'calendar' | 'menu' | 'customers'>('floor');
+  const [activeTab, setActiveTab] = useState<'floor' | 'calendar' | 'menu' | 'customers' | 'settings'>('floor');
   const [pdfFile, setPdfFile] = useState<string | null>(() => {
-    return localStorage.getItem('dinecontrol_pdf_data');
+    return localStorage.getItem(ns('pdf_data'));
   });
   const [pdfFileName, setPdfFileName] = useState<string | null>(() => {
-    return localStorage.getItem('dinecontrol_pdf_name');
+    return localStorage.getItem(ns('pdf_name'));
   });
 
   const handlePdfUpload = (base64: string, name: string) => {
     setPdfFile(base64);
     setPdfFileName(name);
-    localStorage.setItem('dinecontrol_pdf_data', base64);
-    localStorage.setItem('dinecontrol_pdf_name', name);
+    localStorage.setItem(ns('pdf_data'), base64);
+    localStorage.setItem(ns('pdf_name'), name);
   };
 
   const handlePdfRemove = () => {
     setPdfFile(null);
     setPdfFileName(null);
-    localStorage.removeItem('dinecontrol_pdf_data');
-    localStorage.removeItem('dinecontrol_pdf_name');
+    localStorage.removeItem(ns('pdf_data'));
+    localStorage.removeItem(ns('pdf_name'));
   };
 
   const [selectedDate, setSelectedDate] = useState<string>(() => {
@@ -188,15 +195,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('dinecontrol_decorations', JSON.stringify(decorations));
+    localStorage.setItem(ns('decorations'), JSON.stringify(decorations));
   }, [decorations]);
 
   useEffect(() => {
-    localStorage.setItem('dinecontrol_tolerance_enabled', JSON.stringify(isToleranceEnabled));
+    localStorage.setItem(ns('tolerance_enabled'), JSON.stringify(isToleranceEnabled));
   }, [isToleranceEnabled]);
 
   useEffect(() => {
-    localStorage.setItem('dinecontrol_default_seated_duration', JSON.stringify(defaultSeatedDuration));
+    localStorage.setItem(ns('default_seated_duration'), JSON.stringify(defaultSeatedDuration));
   }, [defaultSeatedDuration]);
 
   // --- Real-Time Background Checker for Auto-Release (Tolerance & Seated Limit) ---
@@ -612,7 +619,7 @@ export default function App() {
   // elementos locales (decoración del plano) y se fuerza una resincronización.
   const handleResetDefaults = () => {
     if (confirm('¿Restaurar la decoración del plano por defecto y resincronizar con Airtable? (Las mesas, reservas y clientes NO se tocan: viven en Airtable.)')) {
-      localStorage.removeItem('dinecontrol_decorations');
+      localStorage.removeItem(ns('decorations'));
       setDecorations(INITIAL_DECORATIONS);
       setNotifications([]);
       refreshFromServer(false);
@@ -628,6 +635,9 @@ export default function App() {
     );
     return active || null;
   };
+
+  // Nombre del local (puede cambiarse desde la pestaña Configuración)
+  const [restaurantName, setRestaurantName] = useState(session.restaurant.nombre);
 
   // Quick stats calculation
   const totalTables = tables.length;
@@ -683,9 +693,11 @@ export default function App() {
           </div>
           <div>
             <h1 className="font-sans font-bold text-lg leading-none text-brand-text tracking-tight flex items-center gap-1.5">
-              DineControl AI
+              {restaurantName}
             </h1>
-            <p className="text-[10px] text-brand-muted leading-none mt-1">Plano &amp; Recepción de Reservas Avanzadas</p>
+            <p className="text-[10px] text-brand-muted leading-none mt-1">
+              DineControl AI · {session.user.email}
+            </p>
           </div>
         </div>
 
@@ -786,6 +798,17 @@ export default function App() {
             >
               <Users className="w-4 h-4" />
               Clientes
+            </button>
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium cursor-pointer transition-colors ${
+                activeTab === 'settings'
+                  ? 'bg-brand-primary text-brand-surface font-bold shadow'
+                  : 'text-brand-muted hover:text-brand-text'
+              }`}
+            >
+              <SettingsIcon className="w-4 h-4" />
+              Configuración
             </button>
           </div>
 
@@ -1075,6 +1098,19 @@ export default function App() {
               )}
             </AnimatePresence>
           </div>
+
+          {/* Cerrar sesión */}
+          <div className="relative border-l border-brand-outline pl-4 flex items-center">
+            <button
+              onClick={() => {
+                if (confirm('¿Cerrar sesión en este restaurante?')) onLogout();
+              }}
+              className="p-2 rounded-xl border border-brand-outline hover:border-brand-secondary/40 bg-brand-surface hover:bg-brand-surface-high transition-all text-brand-muted hover:text-brand-secondary cursor-pointer"
+              title="Cerrar sesión"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -1180,9 +1216,16 @@ export default function App() {
                 onPdfRemove={handlePdfRemove}
               />
             </div>
-          ) : (
+          ) : activeTab === 'customers' ? (
             <div className="flex-1 h-full min-h-[450px]">
               <CustomersView customers={customers} />
+            </div>
+          ) : (
+            <div className="flex-1 h-full min-h-[450px]">
+              <SettingsView
+                onNotify={(titulo, msg) => addNotificationLog(titulo, msg, 'system')}
+                onRestaurantRenamed={setRestaurantName}
+              />
             </div>
           )}
         </div>
@@ -1220,4 +1263,54 @@ export default function App() {
 
     </div>
   );
+}
+
+/**
+ * Raíz de la app: gestiona la sesión. Sin token válido muestra el login; con
+ * sesión monta el panel del restaurante. La `key` fuerza un remontaje al
+ * cambiar de local, para que el estado local (y su namespace de localStorage)
+ * se reinicialice limpio.
+ */
+export default function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [comprobando, setComprobando] = useState(true);
+
+  useEffect(() => {
+    // Si el backend devuelve 401 en cualquier momento, volvemos al login.
+    api.setUnauthorizedHandler(() => setSession(null));
+
+    const token = api.getToken();
+    if (!token) {
+      setComprobando(false);
+      return;
+    }
+    // Revalidar el token guardado para no montar el panel con una sesión muerta.
+    api
+      .fetchMe()
+      .then((me) => setSession({ token, user: me.user, restaurant: me.restaurant }))
+      .catch(() => {
+        api.clearToken();
+        setSession(null);
+      })
+      .finally(() => setComprobando(false));
+  }, []);
+
+  const handleLogout = () => {
+    api.clearToken();
+    setSession(null);
+  };
+
+  if (comprobando) {
+    return (
+      <div className="min-h-screen bg-brand-bg text-brand-muted flex items-center justify-center text-sm font-sans">
+        Cargando…
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <LoginView onLogin={setSession} />;
+  }
+
+  return <Panel key={session.restaurant.slug} session={session} onLogout={handleLogout} />;
 }

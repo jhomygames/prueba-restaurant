@@ -1,32 +1,41 @@
 /**
  * Cliente mínimo para la API REST de Airtable (https://airtable.com/developers/web/api).
- * Usa fetch nativo (Node >= 18). Todas las tablas del sandbox (Mesas, Reservas,
- * Clientes) viven en una sola base, referenciada por AIRTABLE_BASE_ID.
+ * Usa fetch nativo (Node >= 18).
+ *
+ * MULTI-TENANT: cada restaurante tiene SU PROPIA base de Airtable, así que el
+ * `baseId` es el primer parámetro OBLIGATORIO de todas las funciones. Es
+ * deliberado que sea obligatorio (y que lance si falta): si algún día se olvida
+ * de pasar el tenant en una ruta nueva, el código falla en vez de leer/escribir
+ * silenciosamente en la base equivocada.
  *
  * Requiere un Personal Access Token (AIRTABLE_API_KEY) con scopes:
  *   data.records:read, data.records:write, schema.bases:read
+ * y acceso a todas las bases de restaurantes + la base del Registro.
  */
 
 const AIRTABLE_API_BASE = "https://api.airtable.com/v0";
 
-function assertConfigured() {
-  const { AIRTABLE_API_KEY, AIRTABLE_BASE_ID } = process.env;
-  if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID) {
+function assertConfigured(baseId) {
+  const { AIRTABLE_API_KEY } = process.env;
+  if (!AIRTABLE_API_KEY) {
+    throw new Error("Airtable no configurado: falta AIRTABLE_API_KEY en el entorno.");
+  }
+  if (!baseId) {
     throw new Error(
-      "Airtable no configurado: faltan AIRTABLE_API_KEY / AIRTABLE_BASE_ID en el entorno."
+      "Airtable: falta el baseId del restaurante (¿se perdió el contexto del tenant?)."
     );
   }
-  return { AIRTABLE_API_KEY, AIRTABLE_BASE_ID };
+  return AIRTABLE_API_KEY;
 }
 
-async function airtableFetch(table, path = "", options = {}) {
-  const { AIRTABLE_API_KEY, AIRTABLE_BASE_ID } = assertConfigured();
-  const url = `${AIRTABLE_API_BASE}/${AIRTABLE_BASE_ID}/${encodeURIComponent(table)}${path}`;
+async function airtableFetch(baseId, table, path = "", options = {}) {
+  const apiKey = assertConfigured(baseId);
+  const url = `${AIRTABLE_API_BASE}/${baseId}/${encodeURIComponent(table)}${path}`;
 
   const res = await fetch(url, {
     ...options,
     headers: {
-      Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       ...(options.headers || {}),
     },
@@ -45,7 +54,7 @@ async function airtableFetch(table, path = "", options = {}) {
  * (suficiente para el volumen de un sandbox; no usar así en producción con
  * miles de registros).
  */
-async function listRecords(table, { filterByFormula, sort, maxRecords } = {}) {
+async function listRecords(baseId, table, { filterByFormula, sort, maxRecords } = {}) {
   const records = [];
   let offset;
 
@@ -61,7 +70,7 @@ async function listRecords(table, { filterByFormula, sort, maxRecords } = {}) {
     }
     if (offset) qs.set("offset", offset);
 
-    const data = await airtableFetch(table, `?${qs.toString()}`);
+    const data = await airtableFetch(baseId, table, `?${qs.toString()}`);
     records.push(...data.records);
     offset = data.offset;
   } while (offset);
@@ -69,31 +78,29 @@ async function listRecords(table, { filterByFormula, sort, maxRecords } = {}) {
   return records;
 }
 
-async function getRecord(table, recordId) {
-  return airtableFetch(table, `/${recordId}`);
+async function getRecord(baseId, table, recordId) {
+  return airtableFetch(baseId, table, `/${recordId}`);
 }
 
 // typecast:true deja que Airtable cree opciones nuevas de single/multiple
 // select sobre la marcha (necesario para Estados "pendiente"/"sentada" y
 // Alergias que la Meta API no permite pre-crear en selects existentes).
-async function createRecord(table, fields, { typecast = false } = {}) {
-  const data = await airtableFetch(table, "", {
+async function createRecord(baseId, table, fields, { typecast = false } = {}) {
+  return airtableFetch(baseId, table, "", {
     method: "POST",
     body: JSON.stringify({ fields, typecast }),
   });
-  return data;
 }
 
-async function updateRecord(table, recordId, fields, { typecast = false } = {}) {
-  const data = await airtableFetch(table, `/${recordId}`, {
+async function updateRecord(baseId, table, recordId, fields, { typecast = false } = {}) {
+  return airtableFetch(baseId, table, `/${recordId}`, {
     method: "PATCH",
     body: JSON.stringify({ fields, typecast }),
   });
-  return data;
 }
 
-async function deleteRecord(table, recordId) {
-  return airtableFetch(table, `/${recordId}`, { method: "DELETE" });
+async function deleteRecord(baseId, table, recordId) {
+  return airtableFetch(baseId, table, `/${recordId}`, { method: "DELETE" });
 }
 
 module.exports = { listRecords, getRecord, createRecord, updateRecord, deleteRecord };

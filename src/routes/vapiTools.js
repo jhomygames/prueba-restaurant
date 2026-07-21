@@ -15,8 +15,30 @@
 
 const express = require("express");
 const { dispatchTool } = require("../services/toolDispatcher");
+const registry = require("../services/registry");
 
 const router = express.Router();
+
+/**
+ * Resuelve a QUÉ restaurante pertenece la llamada. Vapi manda el assistant y el
+ * número en distintos sitios según el tipo de evento, así que probamos todas
+ * las rutas conocidas del payload antes de rendirnos.
+ */
+async function resolveRestaurant(body) {
+  const call = body?.message?.call || body?.call || {};
+  const assistantId =
+    body?.message?.assistant?.id || call.assistantId || call.assistant?.id || body?.assistantId;
+  const phoneNumberId =
+    call.phoneNumberId || call.phoneNumber?.id || body?.message?.phoneNumber?.id;
+
+  const found = await registry.findByVapi({ assistantId, phoneNumberId });
+  if (!found) {
+    console.error(
+      `[vapiTools] no se pudo identificar el restaurante (assistantId=${assistantId}, phoneNumberId=${phoneNumberId})`
+    );
+  }
+  return found;
+}
 
 function verifyVapiSecret(req) {
   const expected = process.env.VAPI_WEBHOOK_SECRET;
@@ -38,7 +60,20 @@ router.post("/vapi/tools", async (req, res) => {
   }
 
   const customerPhone =
-    req.body?.call?.customer?.number || req.body?.customer?.number;
+    req.body?.message?.call?.customer?.number ||
+    req.body?.call?.customer?.number ||
+    req.body?.customer?.number;
+
+  const restaurant = await resolveRestaurant(req.body);
+  if (!restaurant) {
+    // Respuesta suave: el agente dirá que hay un problema en vez de cortar.
+    return res.json({
+      results: toolCalls.map((c) => ({
+        toolCallId: c.id,
+        result: JSON.stringify({ error: "restaurante_no_identificado" }),
+      })),
+    });
+  }
 
   const results = await Promise.all(
     toolCalls.map(async (call) => {
@@ -52,7 +87,10 @@ router.post("/vapi/tools", async (req, res) => {
         }
       }
       try {
-        const result = await dispatchTool(name, args, { customer_phone: customerPhone });
+        const result = await dispatchTool(name, args, {
+          customer_phone: customerPhone,
+          restaurant,
+        });
         return { toolCallId: call.id, result: JSON.stringify(result) };
       } catch (err) {
         console.error(`[vapiTools] error ejecutando ${name}:`, err);

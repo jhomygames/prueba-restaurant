@@ -9,14 +9,16 @@
  *   Reservas: FechaHora "YYYY-MM-DD HH:mm", Estado ES <-> status EN
  *   Clientes: Telefono/Nombre/AlergenosConocidos/Preferencias/UltimaVisita/NumVisitas
  *
- * Auth: si STAFF_API_KEY está definida, se exige el header x-staff-key.
- * En el sandbox puede dejarse sin definir (API abierta, misma URL pública).
+ * MULTI-TENANT: exige login (requireAuth). El restaurante y su base de datos
+ * salen SIEMPRE del JWT (`req.restaurant.baseId`), nunca de parámetros de la
+ * petición: así un usuario de un local no puede leer ni escribir en otro.
  */
 
 const express = require("express");
 const airtable = require("../services/airtableClient");
 const customerMemory = require("../services/customerMemory");
 const menuService = require("../services/menuService");
+const { requireAuth } = require("./auth");
 
 const router = express.Router();
 
@@ -39,15 +41,8 @@ const RES_STATUS_EN = Object.fromEntries(
   Object.entries(RES_STATUS_ES).map(([en, es]) => [es, en])
 );
 
-function requireStaffKey(req, res, next) {
-  const expected = process.env.STAFF_API_KEY;
-  if (expected && req.headers["x-staff-key"] !== expected) {
-    return res.status(401).json({ error: "invalid_staff_key" });
-  }
-  next();
-}
-
-router.use("/api", requireStaffKey);
+// El tenant SIEMPRE sale del JWT (req.restaurant), nunca del body o del query.
+router.use("/api", requireAuth);
 
 // ---------- Mapeos ----------
 
@@ -149,7 +144,7 @@ function handle(fn) {
 router.get(
   "/api/tables",
   handle(async (req, res) => {
-    const records = await airtable.listRecords(MESAS);
+    const records = await airtable.listRecords(req.restaurant.baseId, MESAS);
     res.json(records.map(toAppTable));
   })
 );
@@ -157,7 +152,7 @@ router.get(
 router.post(
   "/api/tables",
   handle(async (req, res) => {
-    const rec = await airtable.createRecord(MESAS, toMesaFields(req.body), { typecast: true });
+    const rec = await airtable.createRecord(req.restaurant.baseId, MESAS, toMesaFields(req.body), { typecast: true });
     res.status(201).json(toAppTable(rec));
   })
 );
@@ -165,7 +160,7 @@ router.post(
 router.patch(
   "/api/tables/:id",
   handle(async (req, res) => {
-    const rec = await airtable.updateRecord(MESAS, req.params.id, toMesaFields(req.body), {
+    const rec = await airtable.updateRecord(req.restaurant.baseId, MESAS, req.params.id, toMesaFields(req.body), {
       typecast: true,
     });
     res.json(toAppTable(rec));
@@ -175,7 +170,7 @@ router.patch(
 router.delete(
   "/api/tables/:id",
   handle(async (req, res) => {
-    await airtable.deleteRecord(MESAS, req.params.id);
+    await airtable.deleteRecord(req.restaurant.baseId, MESAS, req.params.id);
     res.json({ deleted: true, id: req.params.id });
   })
 );
@@ -189,7 +184,7 @@ router.get(
     if (req.query.date) {
       opts.filterByFormula = `FIND('${req.query.date}', {FechaHora}) = 1`;
     }
-    const records = await airtable.listRecords(RESERVAS, opts);
+    const records = await airtable.listRecords(req.restaurant.baseId, RESERVAS, opts);
     res.json(records.map(toAppReservation));
   })
 );
@@ -197,13 +192,13 @@ router.get(
 router.post(
   "/api/reservations",
   handle(async (req, res) => {
-    const rec = await airtable.createRecord(RESERVAS, toReservaFields(req.body), {
+    const rec = await airtable.createRecord(req.restaurant.baseId, RESERVAS, toReservaFields(req.body), {
       typecast: true,
     });
     // Igual que el flujo de voz/WhatsApp: toda reserva registra al cliente.
     if (req.body.customerPhone) {
       await customerMemory
-        .upsertCustomer(req.body.customerPhone, { name: req.body.customerName })
+        .upsertCustomer({ baseId: req.restaurant.baseId }, req.body.customerPhone, { name: req.body.customerName })
         .catch((err) => console.error("[staffApi] upsertCustomer:", err.message));
     }
     res.status(201).json(toAppReservation(rec));
@@ -213,7 +208,7 @@ router.post(
 router.patch(
   "/api/reservations/:id",
   handle(async (req, res) => {
-    const rec = await airtable.updateRecord(RESERVAS, req.params.id, toReservaFields(req.body), {
+    const rec = await airtable.updateRecord(req.restaurant.baseId, RESERVAS, req.params.id, toReservaFields(req.body), {
       typecast: true,
     });
     res.json(toAppReservation(rec));
@@ -225,7 +220,7 @@ router.patch(
 router.get(
   "/api/customers",
   handle(async (req, res) => {
-    const records = await airtable.listRecords(CLIENTES, {
+    const records = await airtable.listRecords(req.restaurant.baseId, CLIENTES, {
       sort: [{ field: "UltimaVisita", direction: "desc" }],
     });
     res.json(records.map(toAppCustomer));
@@ -271,7 +266,7 @@ router.get(
   "/api/menu",
   handle(async (req, res) => {
     // El panel ve TODOS los platos (incluidos los no disponibles).
-    const records = await airtable.listRecords(CARTA, {
+    const records = await airtable.listRecords(req.restaurant.baseId, CARTA, {
       sort: [{ field: "Orden", direction: "asc" }],
     });
     res.json(records.map(toAppDish));
@@ -281,8 +276,8 @@ router.get(
 router.post(
   "/api/menu",
   handle(async (req, res) => {
-    const rec = await airtable.createRecord(CARTA, toCartaFields(req.body), { typecast: true });
-    menuService.invalidateCache();
+    const rec = await airtable.createRecord(req.restaurant.baseId, CARTA, toCartaFields(req.body), { typecast: true });
+    menuService.invalidateCache(req.restaurant.baseId);
     res.status(201).json(toAppDish(rec));
   })
 );
@@ -290,10 +285,10 @@ router.post(
 router.patch(
   "/api/menu/:id",
   handle(async (req, res) => {
-    const rec = await airtable.updateRecord(CARTA, req.params.id, toCartaFields(req.body), {
+    const rec = await airtable.updateRecord(req.restaurant.baseId, CARTA, req.params.id, toCartaFields(req.body), {
       typecast: true,
     });
-    menuService.invalidateCache();
+    menuService.invalidateCache(req.restaurant.baseId);
     res.json(toAppDish(rec));
   })
 );
@@ -301,8 +296,8 @@ router.patch(
 router.delete(
   "/api/menu/:id",
   handle(async (req, res) => {
-    await airtable.deleteRecord(CARTA, req.params.id);
-    menuService.invalidateCache();
+    await airtable.deleteRecord(req.restaurant.baseId, CARTA, req.params.id);
+    menuService.invalidateCache(req.restaurant.baseId);
     res.json({ deleted: true, id: req.params.id });
   })
 );

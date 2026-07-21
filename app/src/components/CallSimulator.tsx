@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Phone, PhoneOff, User, Sparkles, Users, Calendar, Check, Clock, Wrench } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { getToken } from '../api';
 
 interface CallSimulatorProps {
   isOpen: boolean;
@@ -55,8 +56,9 @@ const PERSONAS: Persona[] = [
 
 function authHeaders(): Record<string, string> {
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
-  const k = localStorage.getItem('dinecontrol_staff_key');
-  if (k) h['x-staff-key'] = k;
+  // El simulador va contra /api/call/*, que exige la sesión del panel.
+  const token = getToken();
+  if (token) h['Authorization'] = `Bearer ${token}`;
   return h;
 }
 

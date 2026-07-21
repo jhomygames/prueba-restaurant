@@ -1,8 +1,58 @@
-# Esquema de Airtable (sandbox)
+# Esquema de Airtable (multi-restaurante)
 
-Una sola base con 3 tablas. Los nombres de tabla y campo deben coincidir
-exactamente (mayúsculas incluidas) con lo que usa el código en
-`src/services/reservations.js` y `src/services/customerMemory.js`.
+**Arquitectura**: una base de Airtable POR RESTAURANTE (con las tablas Mesas,
+Reservas, Clientes y Carta que se describen abajo) + una base central
+`Registro` que dice qué restaurantes existen, en qué base viven sus datos y
+quién puede entrar a su panel.
+
+Así el aislamiento entre locales es real: no depende de acordarse de filtrar
+por un campo "RestauranteId" en cada consulta (un filtro olvidado sería una
+fuga de datos entre restaurantes).
+
+Los nombres de tabla y campo deben coincidir exactamente (mayúsculas incluidas)
+con lo que usa el código. Para crear una base de restaurante nueva, NO lo hagas
+a mano: usa `node scripts/provision-restaurant.js --nombre "..." --email ...`.
+
+## Base central `Registro` (env `REGISTRO_BASE_ID`)
+
+### Tabla `Restaurantes`
+
+| Campo | Tipo | Notas |
+|---|---|---|
+| Slug | Single line text | identificador corto y único, ej. `gourmeats-madrid` |
+| Nombre | Single line text | nombre público; lo dice el agente al contestar |
+| BaseId | Single line text | `appXXXX` de la base de datos de ese local |
+| GoogleReviewUrl | Single line text | enlace de reseñas que se envía tras la visita |
+| StaffWhatsApp | Single line text | número del encargado (transfer_to_human) |
+| Activo | Checkbox | los jobs internos solo procesan los activos |
+| VapiApiKeyEnc | Long text | API key propia de Vapi, **cifrada** (vacío = usar la central) |
+| VapiAssistantId | Single line text | assistant de voz del local |
+| VapiPhoneNumberId | Single line text | id del número en Vapi (resuelve el tenant en el webhook) |
+| VapiTelefono | Single line text | número legible, informativo |
+| TwilioAccountSid | Single line text | cuenta Twilio propia (vacío = usar la central) |
+| TwilioAuthTokenEnc | Long text | auth token **cifrado** |
+| TwilioWhatsAppFrom | Single line text | `whatsapp:+1...` del local; resuelve el tenant en WhatsApp |
+
+### Tabla `Usuarios`
+
+| Campo | Tipo | Notas |
+|---|---|---|
+| Email | Single line text | login, en minúsculas |
+| PasswordHash | Single line text | bcrypt (NUNCA texto plano) |
+| NombreStaff | Single line text | |
+| Rol | Single select | `admin` / `staff` (por ahora informativo) |
+| Activo | Checkbox | |
+| RestauranteId | Single line text | id del registro en `Restaurantes` |
+
+**Secretos**: los campos `*Enc` se guardan cifrados con AES-256-GCM
+(`src/services/secretBox.js`) usando la env `TENANT_SECRETS_KEY`. Airtable no
+es un gestor de secretos: así, un acceso de solo lectura a esta base no expone
+los tokens de Twilio/Vapi de nadie. La API del panel nunca los devuelve: solo
+una versión enmascarada.
+
+---
+
+## Base de cada restaurante (3 + 1 tablas)
 
 ## Tabla `Mesas`
 

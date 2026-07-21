@@ -17,9 +17,9 @@ function normalize(s) {
     .replace(/[̀-ͯ]/g, "");
 }
 
-async function getMenuInfo({ category, exclude_allergen, dish_name }) {
+async function getMenuInfo(ctx, { category, exclude_allergen, dish_name }) {
   // La carta viene de Airtable (editable desde el panel), solo platos disponibles.
-  const menu = await menuService.getMenu();
+  const menu = await menuService.getMenu(ctx);
   let categorias = menu.categorias;
 
   if (category) {
@@ -56,39 +56,52 @@ async function getMenuInfo({ category, exclude_allergen, dish_name }) {
   };
 }
 
+/**
+ * `context.restaurant` es OBLIGATORIO: identifica el tenant (su base de datos y
+ * su configuración). Cada canal lo resuelve a su manera antes de llamar aquí
+ * (JWT en el panel, assistantId en Vapi, número destino en WhatsApp).
+ */
 async function dispatchTool(name, args, context = {}) {
+  const restaurant = context.restaurant;
+  if (!restaurant || !restaurant.baseId) {
+    console.error(`[toolDispatcher] ${name} sin restaurante en contexto`);
+    return { error: "restaurante_no_identificado" };
+  }
+  const ctx = { baseId: restaurant.baseId };
+
   switch (name) {
     case "check_availability":
-      return reservations.checkAvailability(args);
+      return reservations.checkAvailability(ctx, args);
 
     case "create_reservation": {
-      const result = await reservations.createReservation(args);
+      const result = await reservations.createReservation(ctx, args);
       if (result.created) {
         // Guarda/actualiza el cliente en Airtable para que quede en la memoria de
         // clientes habituales, sin importar el canal (voz o WhatsApp).
         await customerMemory
-          .upsertCustomer(args.customer_phone, { name: args.customer_name })
+          .upsertCustomer(ctx, args.customer_phone, { name: args.customer_name })
           .catch((err) => console.error("[toolDispatcher] error guardando cliente:", err));
       }
       return result;
     }
 
     case "cancel_reservation":
-      return reservations.cancelReservation(args);
+      return reservations.cancelReservation(ctx, args);
 
     case "get_menu_info":
-      return getMenuInfo(args);
+      return getMenuInfo(ctx, args);
 
     case "transfer_to_human":
       return notifyStaff({
         reason: args.reason,
         customer_phone: args.customer_phone || context.customer_phone,
         channel: args.channel,
+        restaurant,
       });
 
     case "get_customer_memory": {
       const phone = args.customer_phone || context.customer_phone;
-      const customer = await customerMemory.getCustomer(phone);
+      const customer = await customerMemory.getCustomer(ctx, phone);
       return { customer: customer || null };
     }
 

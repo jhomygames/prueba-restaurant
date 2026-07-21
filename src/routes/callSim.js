@@ -11,7 +11,8 @@
  *   POST /api/call/agent    -> un turno de María (puede encadenar tool-calls)
  *   POST /api/call/customer -> un turno del cliente simulado (rol-play Claude)
  *
- * Ambos comparten el guard x-staff-key con el resto de /api (ver server.js).
+ * Ambos exigen login: el restaurante (y por tanto su base de datos y su carta)
+ * sale del JWT, igual que el resto de /api.
  */
 
 const express = require("express");
@@ -19,6 +20,7 @@ const Anthropic = require("@anthropic-ai/sdk");
 const { tools } = require("../config/tools");
 const { dispatchTool } = require("../services/toolDispatcher");
 const { buildVoiceSystemPrompt } = require("../config/voicePrompt");
+const { requireAuth } = require("./auth");
 
 const router = express.Router();
 
@@ -28,14 +30,8 @@ const AGENT_MODEL = "claude-sonnet-5";
 const CUSTOMER_MODEL = "claude-haiku-4-5-20251001";
 const MAX_TOOL_ITERATIONS = 6;
 
-function requireStaffKey(req, res, next) {
-  const expected = process.env.STAFF_API_KEY;
-  if (expected && req.headers["x-staff-key"] !== expected) {
-    return res.status(401).json({ error: "invalid_staff_key" });
-  }
-  next();
-}
-router.use("/api/call", requireStaffKey);
+// El simulador corre dentro del panel: tenant del JWT.
+router.use("/api/call", requireAuth);
 
 function anthropicTools() {
   return tools.map((t) => ({
@@ -82,7 +78,7 @@ router.post("/api/call/agent", async (req, res) => {
       const response = await anthropic.messages.create({
         model: AGENT_MODEL,
         max_tokens: 1024,
-        system: buildVoiceSystemPrompt(phone),
+        system: buildVoiceSystemPrompt(phone, req.restaurant.nombre),
         tools: anthropicTools(),
         messages,
       });
@@ -107,7 +103,7 @@ router.post("/api/call/agent", async (req, res) => {
           if (block.name === "create_reservation" || block.name === "cancel_reservation") {
             args.customer_phone = args.customer_phone || phone;
           }
-          const result = await dispatchTool(block.name, args, { customer_phone: phone });
+          const result = await dispatchTool(block.name, args, { customer_phone: phone, restaurant: req.restaurant });
           toolActivity.push({ name: block.name, args });
           if (block.name === "create_reservation" && result && result.created) {
             reservation = {
@@ -151,7 +147,7 @@ router.post("/api/call/customer", async (req, res) => {
   try {
     const { history = [], persona = {} } = req.body;
 
-    const system = `Estás interpretando a un CLIENTE que llama por teléfono a una hamburguesería para hacer una reserva. Hablas por teléfono con la recepcionista (María).
+    const system = `Estás interpretando a un CLIENTE que llama por teléfono a ${req.restaurant.nombre} para hacer una reserva. Hablas por teléfono con la recepcionista (María).
 
 TU PERSONAJE (mantente coherente con estos datos durante toda la llamada):
 - Nombre: ${persona.name || "María López"}

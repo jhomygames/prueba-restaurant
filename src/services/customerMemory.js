@@ -27,21 +27,21 @@ function toCustomerShape(record) {
   };
 }
 
-async function findCustomerRecord(phone) {
-  const matches = await listRecords(TABLE_CLIENTES, {
+async function findCustomerRecord(ctx, phone) {
+  const matches = await listRecords(ctx.baseId, TABLE_CLIENTES, {
     filterByFormula: `{Telefono} = '${phone}'`,
     maxRecords: 1,
   });
   return matches[0] || null;
 }
 
-async function getCustomer(phone) {
-  const record = await findCustomerRecord(phone);
+async function getCustomer(ctx, phone) {
+  const record = await findCustomerRecord(ctx, phone);
   return toCustomerShape(record);
 }
 
-async function upsertCustomer(phone, fields) {
-  const existing = await findCustomerRecord(phone);
+async function upsertCustomer(ctx, phone, fields) {
+  const existing = await findCustomerRecord(ctx, phone);
 
   const airtableFields = {};
   if (fields.name !== undefined) airtableFields.Nombre = fields.name;
@@ -52,17 +52,17 @@ async function upsertCustomer(phone, fields) {
 
   let record;
   if (existing) {
-    record = await updateRecord(TABLE_CLIENTES, existing.id, airtableFields);
+    record = await updateRecord(ctx.baseId, TABLE_CLIENTES, existing.id, airtableFields);
   } else {
-    record = await createRecord(TABLE_CLIENTES, { Telefono: phone, ...airtableFields });
+    record = await createRecord(ctx.baseId, TABLE_CLIENTES, { Telefono: phone, ...airtableFields });
   }
   return toCustomerShape(record);
 }
 
-async function recordVisit(phone) {
-  const existing = await getCustomer(phone);
+async function recordVisit(ctx, phone) {
+  const existing = await getCustomer(ctx, phone);
   const visitCount = (existing?.visit_count || 0) + 1;
-  return upsertCustomer(phone, {
+  return upsertCustomer(ctx, phone, {
     visit_count: visitCount,
     last_visit_at: new Date().toISOString(),
   });

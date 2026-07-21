@@ -5,6 +5,10 @@
  *
  * Protegidos con header `x-internal-secret` == INTERNAL_JOBS_SECRET.
  *
+ * MULTI-TENANT: una sola ejecución recorre TODOS los restaurantes activos del
+ * Registro, cada uno contra su propia base y con sus propias credenciales de
+ * Twilio. Así siguen bastando los 2 escenarios del plan Free de Make.
+ *
  * Plan Make Free (máx. 2 escenarios simultáneos) => los recordatorios de 24h
  * y 1h se fusionan en una sola ejecución (`/internal/reminders/run`).
  */
@@ -13,6 +17,7 @@ const express = require("express");
 const twilio = require("twilio");
 const reservations = require("../services/reservations");
 const customerMemory = require("../services/customerMemory");
+const registry = require("../services/registry");
 
 const router = express.Router();
 
@@ -25,21 +30,19 @@ function requireInternalSecret(req, res, next) {
   next();
 }
 
-function getTwilioClient() {
-  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
-  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) return null;
-  return twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
-}
-
-async function sendWhatsApp(toPhone, body) {
-  const client = getTwilioClient();
-  const fromNumber = process.env.TWILIO_WHATSAPP_FROM;
-  if (!client || !fromNumber) {
-    console.warn("[internalJobs] Twilio no configurado, solo logueando envío:", toPhone, body);
+/** Envía por WhatsApp usando las credenciales del restaurante (o las centrales). */
+async function sendWhatsApp(restaurant, toPhone, body) {
+  const creds = registry.twilioCredentials(restaurant);
+  if (!creds) {
+    console.warn(
+      `[internalJobs] Twilio no configurado para ${restaurant.nombre}, solo logueando:`,
+      toPhone
+    );
     return { sent: false, reason: "twilio_not_configured" };
   }
+  const client = twilio(creds.accountSid, creds.authToken);
   await client.messages.create({
-    from: fromNumber,
+    from: creds.from,
     to: `whatsapp:${toPhone}`,
     body,
   });
@@ -53,37 +56,47 @@ async function sendWhatsApp(toPhone, body) {
 // recordatorio de 24h solo aplica a reservas a más de 20h vista.
 router.post("/internal/reminders/run", requireInternalSecret, async (req, res) => {
   try {
-    const [upcoming24h, upcoming1h] = await Promise.all([
-      reservations.getUpcomingReservations({ hoursAhead: 25, hoursFloor: 20 }),
-      reservations.getUpcomingReservations({ hoursAhead: 1.25 }),
-    ]);
-
+    const restaurants = await registry.activeRestaurants();
     const results = [];
 
-    for (const r of upcoming24h.filter((r) => !r.reminded_24h)) {
-      const body =
-        `¡Hola ${r.customer_name}! Te recordamos tu reserva de mañana ` +
-        `${r.date} a las ${r.time} para ${r.party_size} persona(s). ` +
-        `Si necesitas cancelar o modificarla, responde a este mensaje.`;
-      const sendResult = await sendWhatsApp(r.customer_phone, body);
-      if (sendResult.sent) {
-        await reservations.markReservation(r.id, { Recordatorio24h: true });
+    for (const restaurant of restaurants) {
+      const ctx = { baseId: restaurant.baseId };
+      try {
+        const [upcoming24h, upcoming1h] = await Promise.all([
+          reservations.getUpcomingReservations(ctx, { hoursAhead: 25, hoursFloor: 20 }),
+          reservations.getUpcomingReservations(ctx, { hoursAhead: 1.25 }),
+        ]);
+
+        for (const r of upcoming24h.filter((r) => !r.reminded_24h)) {
+          const body =
+            `¡Hola ${r.customer_name}! Te recordamos tu reserva de mañana en ${restaurant.nombre}, ` +
+            `${r.date} a las ${r.time} para ${r.party_size} persona(s). ` +
+            `Si necesitas cancelar o modificarla, responde a este mensaje.`;
+          const sendResult = await sendWhatsApp(restaurant, r.customer_phone, body);
+          if (sendResult.sent) {
+            await reservations.markReservation(ctx, r.id, { Recordatorio24h: true });
+          }
+          results.push({ restaurante: restaurant.slug, reservation_id: r.id, window: "24h", ...sendResult });
+        }
+
+        for (const r of upcoming1h.filter((r) => !r.reminded_1h)) {
+          const body =
+            `¡Hola ${r.customer_name}! Tu reserva en ${restaurant.nombre} es en aproximadamente 1 hora, ` +
+            `hoy a las ${r.time} para ${r.party_size} persona(s). ¡Te esperamos!`;
+          const sendResult = await sendWhatsApp(restaurant, r.customer_phone, body);
+          if (sendResult.sent) {
+            await reservations.markReservation(ctx, r.id, { Recordatorio1h: true });
+          }
+          results.push({ restaurante: restaurant.slug, reservation_id: r.id, window: "1h", ...sendResult });
+        }
+      } catch (err) {
+        // Un restaurante roto no debe impedir procesar el resto.
+        console.error(`[internalJobs] error en recordatorios de ${restaurant.slug}:`, err.message);
+        results.push({ restaurante: restaurant.slug, error: err.message });
       }
-      results.push({ reservation_id: r.id, window: "24h", ...sendResult });
     }
 
-    for (const r of upcoming1h.filter((r) => !r.reminded_1h)) {
-      const body =
-        `¡Hola ${r.customer_name}! Tu reserva es en aproximadamente 1 hora, ` +
-        `hoy a las ${r.time} para ${r.party_size} persona(s). ¡Te esperamos!`;
-      const sendResult = await sendWhatsApp(r.customer_phone, body);
-      if (sendResult.sent) {
-        await reservations.markReservation(r.id, { Recordatorio1h: true });
-      }
-      results.push({ reservation_id: r.id, window: "1h", ...sendResult });
-    }
-
-    res.json({ ok: true, processed: results.length, results });
+    res.json({ ok: true, restaurantes: restaurants.length, processed: results.length, results });
   } catch (err) {
     console.error("[internalJobs] error en reminders/run:", err);
     res.status(500).json({ ok: false, error: "internal_error" });
@@ -94,30 +107,41 @@ router.post("/internal/reminders/run", requireInternalSecret, async (req, res) =
 // marca ResenaPedida y pasa la reserva a Estado "completada" tras enviar.
 router.post("/internal/reviews/run", requireInternalSecret, async (req, res) => {
   try {
-    const recentVisits = await reservations.getRecentlyCompletedVisits({ hoursAgo: 4 });
-
-    const reviewUrl = process.env.GOOGLE_REVIEW_URL || "https://TU_ENLACE_GOOGLE_REVIEW";
+    const restaurants = await registry.activeRestaurants();
     const results = [];
-    for (const r of recentVisits) {
-      const body =
-        `Gracias por visitarnos, ${r.customer_name} 🙏 Si te gustó tu experiencia, ` +
-        `¿nos dejarías una reseña en Google? ${reviewUrl}`;
-      const sendResult = await sendWhatsApp(r.customer_phone, body);
-      if (sendResult.sent) {
-        await reservations.markReservation(r.id, {
-          ResenaPedida: true,
-          Estado: "completada",
-        });
-        // La visita ya ocurrió: es el momento correcto de contarla en la
-        // memoria del cliente (no al reservar ni al escribir por WhatsApp).
-        await customerMemory
-          .recordVisit(r.customer_phone)
-          .catch((err) => console.error("[internalJobs] error registrando visita:", err));
+
+    for (const restaurant of restaurants) {
+      const ctx = { baseId: restaurant.baseId };
+      try {
+        const recentVisits = await reservations.getRecentlyCompletedVisits(ctx, { hoursAgo: 4 });
+        const reviewUrl =
+          restaurant.googleReviewUrl || process.env.GOOGLE_REVIEW_URL || "https://TU_ENLACE_GOOGLE_REVIEW";
+
+        for (const r of recentVisits) {
+          const body =
+            `Gracias por visitarnos en ${restaurant.nombre}, ${r.customer_name} 🙏 ` +
+            `Si te gustó tu experiencia, ¿nos dejarías una reseña en Google? ${reviewUrl}`;
+          const sendResult = await sendWhatsApp(restaurant, r.customer_phone, body);
+          if (sendResult.sent) {
+            await reservations.markReservation(ctx, r.id, {
+              ResenaPedida: true,
+              Estado: "completada",
+            });
+            // La visita ya ocurrió: es el momento correcto de contarla en la
+            // memoria del cliente (no al reservar ni al escribir por WhatsApp).
+            await customerMemory
+              .recordVisit(ctx, r.customer_phone)
+              .catch((err) => console.error("[internalJobs] error registrando visita:", err));
+          }
+          results.push({ restaurante: restaurant.slug, reservation_id: r.id, ...sendResult });
+        }
+      } catch (err) {
+        console.error(`[internalJobs] error en reseñas de ${restaurant.slug}:`, err.message);
+        results.push({ restaurante: restaurant.slug, error: err.message });
       }
-      results.push({ reservation_id: r.id, ...sendResult });
     }
 
-    res.json({ ok: true, processed: results.length, results });
+    res.json({ ok: true, restaurantes: restaurants.length, processed: results.length, results });
   } catch (err) {
     console.error("[internalJobs] error en reviews/run:", err);
     res.status(500).json({ ok: false, error: "internal_error" });

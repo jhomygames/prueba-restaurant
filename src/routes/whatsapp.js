@@ -17,6 +17,7 @@ const twilio = require("twilio");
 const Anthropic = require("@anthropic-ai/sdk");
 const { tools } = require("../config/tools");
 const { dispatchTool } = require("../services/toolDispatcher");
+const registry = require("../services/registry");
 
 const router = express.Router();
 
@@ -28,7 +29,7 @@ const MAX_HISTORY_MESSAGES = 20;
 // Historial en memoria: Map<phone, Array<{role, content}>>
 const _conversations = new Map();
 
-function buildSystemPrompt(phone) {
+function buildSystemPrompt(phone, restaurantName) {
   const ahora = new Date().toLocaleString("es-ES", {
     timeZone: "Europe/Madrid",
     weekday: "long",
@@ -39,7 +40,7 @@ function buildSystemPrompt(phone) {
     minute: "2-digit",
   });
 
-  return `Eres el asistente por WhatsApp de una hamburguesería. Atiendes reservas, dudas sobre la carta y peticiones de contacto humano.
+  return `Eres el asistente por WhatsApp de ${restaurantName || "una hamburguesería"}. Atiendes reservas, dudas sobre la carta y peticiones de contacto humano.
 
 FECHA Y HORA ACTUAL: ${ahora} (zona Europe/Madrid). Úsala para resolver expresiones como "mañana", "el viernes" o "esta noche" a fechas concretas YYYY-MM-DD antes de llamar a cualquier herramienta.
 
@@ -75,8 +76,8 @@ function anthropicTools() {
   }));
 }
 
-function verifyTwilioSignature(req) {
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
+function verifyTwilioSignature(req, creds) {
+  const authToken = (creds && creds.authToken) || process.env.TWILIO_AUTH_TOKEN;
   const publicUrl = process.env.PUBLIC_BASE_URL;
   if (!authToken || !publicUrl) return true; // TODO: exigir esto antes de producción (punto 9)
   const signature = req.headers["x-twilio-signature"];
@@ -84,8 +85,10 @@ function verifyTwilioSignature(req) {
   return twilio.validateRequest(authToken, signature, url, req.body);
 }
 
-async function runClaudeLoop(phone, userMessage) {
-  const history = _conversations.get(phone) || [];
+async function runClaudeLoop(restaurant, phone, userMessage) {
+  // Historial por restaurante + teléfono: dos locales no comparten conversación.
+  const convKey = `${restaurant.id}:${phone}`;
+  const history = _conversations.get(convKey) || [];
   history.push({ role: "user", content: userMessage });
 
   let messages = history.slice(-MAX_HISTORY_MESSAGES);
@@ -95,7 +98,7 @@ async function runClaudeLoop(phone, userMessage) {
     const response = await anthropic.messages.create({
       model: "claude-sonnet-5",
       max_tokens: 1024,
-      system: buildSystemPrompt(phone),
+      system: buildSystemPrompt(phone, restaurant.nombre),
       tools: anthropicTools(),
       messages,
     });
@@ -117,6 +120,7 @@ async function runClaudeLoop(phone, userMessage) {
       toolUseBlocks.map(async (block) => {
         const result = await dispatchTool(block.name, block.input, {
           customer_phone: phone,
+          restaurant,
         });
         return {
           type: "tool_result",
@@ -129,12 +133,29 @@ async function runClaudeLoop(phone, userMessage) {
     messages.push({ role: "user", content: toolResults });
   }
 
-  _conversations.set(phone, messages.slice(-MAX_HISTORY_MESSAGES));
+  _conversations.set(convKey, messages.slice(-MAX_HISTORY_MESSAGES));
   return finalText || "Disculpa, ¿puedes repetir tu solicitud?";
 }
 
 router.post("/whatsapp/webhook", async (req, res) => {
-  if (!verifyTwilioSignature(req)) {
+  const { MessagingResponse } = twilio.twiml;
+  const twiml = new MessagingResponse();
+
+  // El tenant se resuelve por el número AL QUE escribe el cliente (`To`), que
+  // es el WhatsApp del local. Un único webhook sirve a todos los restaurantes.
+  const restaurant = await registry.findByWhatsAppTo(req.body.To).catch((err) => {
+    console.error("[whatsapp] error resolviendo restaurante:", err.message);
+    return null;
+  });
+
+  if (!restaurant) {
+    console.error(`[whatsapp] mensaje a un número no registrado: ${req.body.To}`);
+    twiml.message("Este número no está disponible ahora mismo. Inténtalo más tarde.");
+    return res.type("text/xml").send(twiml.toString());
+  }
+
+  const creds = registry.twilioCredentials(restaurant);
+  if (!verifyTwilioSignature(req, creds)) {
     return res.status(401).send("invalid_signature");
   }
 
@@ -142,11 +163,8 @@ router.post("/whatsapp/webhook", async (req, res) => {
   const body = req.body.Body || "";
   const phone = (from || "").replace("whatsapp:", "");
 
-  const { MessagingResponse } = twilio.twiml;
-  const twiml = new MessagingResponse();
-
   try {
-    const reply = await runClaudeLoop(phone, body);
+    const reply = await runClaudeLoop(restaurant, phone, body);
     twiml.message(reply);
   } catch (err) {
     console.error("[whatsapp] error procesando mensaje:", err);
