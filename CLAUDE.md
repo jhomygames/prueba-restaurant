@@ -103,6 +103,13 @@ con dos canales que comparten el mismo backend y las mismas herramientas:
   alérgenos derivados de los datos reales. Ojo: Airtable omite checkbox desmarcados
   (undefined, no false) → availability se mapea con `=== true`. Verificado end-to-end
   (crear/editar/ocultar/eliminar contra Airtable real + el agente respeta Disponible).
+- **Base del tenant 1 migrada a una copia (2026-07-21)**: la base original `app4Q8A4HIcFRkFza`
+  ("Restaurant") empezó a devolver 503 en TODAS sus tablas y tampoco cargaba en la web de
+  Airtable (incidencia del lado de Airtable, no del código: las demás bases respondían bien
+  por la misma ruta). El usuario la duplicó a "Restaurant (Copia)" `appbBnqDLwBR1YCMd`, con
+  los datos íntegros (15 mesas, 6 reservas, 3 clientes, 38 platos), y el registro del tenant
+  `gourmeats-madrid` se apuntó a esa copia. Si la original revive, NO volver a apuntarla sin
+  comparar antes los datos: la copia ya tiene escrituras nuevas.
 - **MULTI-RESTAURANTE con login (2026-07-21)**: el sistema sirve a varios locales a la vez.
   Arquitectura: **una base de Airtable por restaurante** + base central `Registro`
   (`REGISTRO_BASE_ID`, tablas `Restaurantes` y `Usuarios`; esquema en AIRTABLE_SCHEMA.md).

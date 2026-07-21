@@ -133,6 +133,17 @@ function handle(fn) {
     try {
       await fn(req, res);
     } catch (err) {
+      // Un registro que no existe EN LA BASE DE ESTE RESTAURANTE (por ejemplo,
+      // un id de otro local) es un 404, no un error del servidor. Airtable lo
+      // reporta como 404 o como 403 INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND
+      // (no distingue "no existe" de "no es tuyo", que es justo lo que queremos).
+      if (
+        /Airtable API error 404/.test(err.message) ||
+        /INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND/.test(err.message)
+      ) {
+        console.warn(`[staffApi] ${req.method} ${req.path}: registro no encontrado en este restaurante`);
+        return res.status(404).json({ error: "no_encontrado" });
+      }
       console.error(`[staffApi] ${req.method} ${req.path}:`, err.message);
       res.status(500).json({ error: "internal_error", detail: err.message });
     }
