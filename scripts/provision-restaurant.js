@@ -172,6 +172,23 @@ async function main() {
   });
   console.log(`Base creada para ${nombre}: ${base.id}`);
 
+  // 1b. Campo de enlace Reservas.Mesa -> Mesas.
+  // No puede ir en la creación de la base: un campo de enlace necesita el id de
+  // la tabla destino, que Airtable solo asigna DESPUÉS de crearla. Sin este
+  // campo, guardar una reserva falla con "Unknown field name: Mesa".
+  const esquema = await api(`https://api.airtable.com/v0/meta/bases/${base.id}/tables`);
+  const tblMesas = esquema.tables.find((t) => t.name === "Mesas");
+  const tblReservas = esquema.tables.find((t) => t.name === "Reservas");
+  await api(`https://api.airtable.com/v0/meta/bases/${base.id}/tables/${tblReservas.id}/fields`, {
+    method: "POST",
+    body: JSON.stringify({
+      name: "Mesa",
+      type: "multipleRecordLinks",
+      options: { linkedTableId: tblMesas.id },
+    }),
+  });
+  console.log("  campo Reservas.Mesa enlazado a Mesas");
+
   // 2. Siembra del plano
   const mesas = MESAS_DEFECTO.map(([Nombre, Capacidad, PosX, PosY, Forma, Rotacion, Zona]) => ({
     fields: { Nombre, Capacidad, PosX, PosY, Forma, Rotacion, Zona, Estado: "Libre" },
