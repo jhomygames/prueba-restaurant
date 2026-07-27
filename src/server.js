@@ -10,6 +10,7 @@ const staffApiRouter = require("./routes/staffApi");
 const callSimRouter = require("./routes/callSim");
 const { router: authRouter } = require("./routes/auth");
 const settingsApiRouter = require("./routes/settingsApi");
+const integrationsRouter = require("./routes/integrations");
 
 const app = express();
 
@@ -22,6 +23,8 @@ app.get("/health", (req, res) => res.json({ ok: true }));
 app.use(vapiToolsRouter);
 app.use(whatsappRouter);
 app.use(internalJobsRouter);
+// Webhooks de plataformas externas: públicos, con su propia autenticación.
+app.use(integrationsRouter);
 // El login va ANTES de los routers protegidos (sus rutas son públicas).
 app.use(authRouter);
 app.use(settingsApiRouter);

@@ -42,6 +42,10 @@ function toReservationShape(record) {
     reminded_24h: Boolean(f.Recordatorio24h),
     reminded_1h: Boolean(f.Recordatorio1h),
     review_requested: Boolean(f.ResenaPedida),
+    // De dónde vino la reserva. Las creadas antes de existir este campo no lo
+    // tienen: se muestran como "panel" por ser lo más probable históricamente.
+    source: f.Origen || "panel",
+    external_id: f.ExternalId || null,
   };
 }
 
@@ -77,13 +81,24 @@ async function checkAvailability(ctx, { date, time, party_size }) {
   };
 }
 
-async function createReservation(ctx, { date, time, party_size, customer_name, customer_phone, notes }) {
+/**
+ * Crea una reserva asignando la primera mesa libre.
+ *
+ * `source` marca el canal de origen (`voz`, `whatsapp`, `panel`, o el nombre de
+ * una plataforma externa). `external_id` solo lo usan las integraciones: es el
+ * id de la reserva EN la plataforma, y es lo que permite deduplicar cuando el
+ * mismo webhook llega dos veces.
+ */
+async function createReservation(
+  ctx,
+  { date, time, party_size, customer_name, customer_phone, notes, source, external_id }
+) {
   const mesa = await findAvailableTable(ctx, date, time, party_size);
   if (!mesa) {
     return { created: false, reason: "no_availability" };
   }
 
-  const record = await createRecord(ctx.baseId, TABLE_RESERVAS, {
+  const fields = {
     FechaHora: fechaHoraKey(date, time),
     Personas: party_size,
     ClienteNombre: customer_name,
@@ -91,7 +106,12 @@ async function createReservation(ctx, { date, time, party_size, customer_name, c
     Mesa: [mesa.id],
     Estado: "confirmada",
     Notas: notes || "",
-  });
+    Origen: source || "panel",
+  };
+  if (external_id) fields.ExternalId = String(external_id);
+
+  // typecast por si el catálogo de Origen de esa base aún no tiene el valor.
+  const record = await createRecord(ctx.baseId, TABLE_RESERVAS, fields, { typecast: true });
 
   return { created: true, ...toReservationShape(record), table: mesa.fields.Nombre };
 }

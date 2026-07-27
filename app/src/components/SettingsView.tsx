@@ -11,6 +11,8 @@ import {
   Sparkles,
   Send,
   RefreshCw,
+  Globe,
+  Unplug,
 } from 'lucide-react';
 import * as api from '../api';
 import { RestaurantSettings } from '../api';
@@ -122,6 +124,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, onRestaura
   const [ocupadoWa, setOcupadoWa] = useState<string | null>(null);
   const [copiado, setCopiado] = useState(false);
 
+  // Plataformas de reservas
+  const [proveedor, setProveedor] = useState('');
+  const [integApiKey, setIntegApiKey] = useState('');
+  const [integRestId, setIntegRestId] = useState('');
+  const [estadoInteg, setEstadoInteg] = useState<Estado>(null);
+  const [ocupadoInteg, setOcupadoInteg] = useState<string | null>(null);
+  const [copiadoInteg, setCopiadoInteg] = useState<'url' | 'token' | null>(null);
+
   // Cuenta
   const [passActual, setPassActual] = useState('');
   const [passNueva, setPassNueva] = useState('');
@@ -134,6 +144,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, onRestaura
     setStaffWhatsApp(s.staffWhatsApp || '');
     setAccountSid(s.whatsapp.accountSid || '');
     setFrom(s.whatsapp.from || '');
+    setProveedor(s.integracion?.proveedor || '');
+    setIntegRestId(s.integracion?.restauranteExternoId || '');
   };
 
   useEffect(() => {
@@ -274,6 +286,91 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, onRestaura
     } finally {
       setOcupadoWa(null);
     }
+  };
+
+  // --- Plataformas de reservas externas ---
+
+  const guardarIntegracion = async () => {
+    if (!proveedor) {
+      setEstadoInteg({ tipo: 'error', texto: 'Elige primero una plataforma.' });
+      return;
+    }
+    setOcupadoInteg('save');
+    setEstadoInteg(null);
+    try {
+      const integracion = await api.saveIntegration({
+        provider: proveedor,
+        apiKey: integApiKey.trim() || undefined,
+        restauranteExternoId: integRestId.trim(),
+      });
+      setSettings((prev) => (prev ? { ...prev, integracion } : prev));
+      setIntegApiKey('');
+      setEstadoInteg({
+        tipo: 'ok',
+        texto: 'Conector activado. Copia la dirección y el token, y pégalos en la plataforma.',
+      });
+      onNotify('Plataforma conectada', `Integración con ${integracion.proveedor} activada.`);
+    } catch (e: any) {
+      setEstadoInteg({ tipo: 'error', texto: e.message });
+    } finally {
+      setOcupadoInteg(null);
+    }
+  };
+
+  const desconectarIntegracion = async () => {
+    if (!confirm('¿Desconectar esta plataforma? Dejaremos de aceptar sus reservas.')) return;
+    setOcupadoInteg('save');
+    try {
+      const integracion = await api.saveIntegration({ provider: null });
+      setSettings((prev) => (prev ? { ...prev, integracion } : prev));
+      setProveedor('');
+      setIntegApiKey('');
+      setIntegRestId('');
+      setEstadoInteg({ tipo: 'ok', texto: 'Plataforma desconectada.' });
+    } catch (e: any) {
+      setEstadoInteg({ tipo: 'error', texto: e.message });
+    } finally {
+      setOcupadoInteg(null);
+    }
+  };
+
+  const regenerarToken = async () => {
+    if (!confirm('¿Generar un token nuevo? El actual dejará de funcionar hasta que lo actualices en la plataforma.')) return;
+    setOcupadoInteg('rotate');
+    setEstadoInteg(null);
+    try {
+      const integracion = await api.rotateIntegrationToken();
+      setSettings((prev) => (prev ? { ...prev, integracion } : prev));
+      setEstadoInteg({ tipo: 'ok', texto: integracion.aviso || 'Token regenerado.' });
+    } catch (e: any) {
+      setEstadoInteg({ tipo: 'error', texto: e.message });
+    } finally {
+      setOcupadoInteg(null);
+    }
+  };
+
+  const comprobarIntegracion = async () => {
+    setOcupadoInteg('test');
+    setEstadoInteg(null);
+    try {
+      const r = await api.testIntegration();
+      setEstadoInteg({
+        tipo: r.ok ? 'ok' : 'error',
+        texto: r.ok
+          ? `Listo para recibir reservas de ${r.proveedor} (${r.recibePor}).${r.nota ? ' ' + r.nota : ''}`
+          : r.problemas.join(' '),
+      });
+    } catch (e: any) {
+      setEstadoInteg({ tipo: 'error', texto: e.message });
+    } finally {
+      setOcupadoInteg(null);
+    }
+  };
+
+  const copiarTexto = (texto: string, cual: 'url' | 'token') => {
+    navigator.clipboard.writeText(texto);
+    setCopiadoInteg(cual);
+    setTimeout(() => setCopiadoInteg(null), 2000);
   };
 
   const cambiarPassword = async () => {
@@ -439,6 +536,137 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, onRestaura
           </button>
         </div>
         <Aviso estado={estadoWa} />
+      </Tarjeta>
+
+      {/* --- Plataformas de reservas externas --- */}
+      <Tarjeta
+        icono={<Globe className="w-4 h-4" />}
+        titulo="Plataformas de reservas"
+        subtitulo="Que las reservas de TheFork y similares entren solas"
+        badge={
+          <Badge
+            activo={settings.integracion?.activa === true}
+            textoActivo={
+              settings.integracion?.proveedores.find((p) => p.id === settings.integracion.proveedor)?.label ||
+              'Conectado'
+            }
+          />
+        }
+      >
+        <div>
+          <label className="text-[10px] uppercase font-mono text-brand-muted block mb-1">Plataforma</label>
+          <select
+            value={proveedor}
+            onChange={(e) => setProveedor(e.target.value)}
+            className="w-full bg-brand-surface-low border border-brand-outline rounded-lg px-3 py-2 text-xs text-brand-text font-sans focus:outline-none focus:border-brand-primary cursor-pointer"
+          >
+            <option value="">Sin conectar</option>
+            {settings.integracion?.proveedores.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {proveedor === 'thefork' && (
+          <div className="flex items-start gap-2 rounded-lg p-2.5 text-[11px] border bg-brand-primary/5 border-brand-primary/25 text-brand-text">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-brand-primary" />
+            <span className="leading-relaxed">
+              Necesitas una cuenta de <strong>partner o POS de TheFork</strong>. Durante ese alta les entregas
+              la dirección y el token de abajo; ellos no se generan desde su web.
+            </span>
+          </div>
+        )}
+
+        <Campo
+          label={
+            settings.integracion?.apiKeyMasked
+              ? `Clave de la plataforma (guardada: ${settings.integracion.apiKeyMasked})`
+              : 'Clave de la plataforma (opcional)'
+          }
+          value={integApiKey}
+          onChange={setIntegApiKey}
+          type="password"
+          placeholder={settings.integracion?.apiKeyMasked ? 'Escribe una nueva para reemplazarla' : 'Solo si la plataforma te da una'}
+          hint="Se guarda cifrada. Hoy no hace falta para recibir reservas, sirve para funciones futuras."
+        />
+
+        <Campo
+          label="Id del restaurante en la plataforma"
+          value={integRestId}
+          onChange={setIntegRestId}
+          placeholder="ej. 123456"
+          hint="Opcional. El identificador que usa la plataforma para este local."
+        />
+
+        {settings.integracion?.activa && settings.integracion.webhookUrl && (
+          <div className="bg-brand-surface-low border border-brand-outline rounded-xl p-3 space-y-3">
+            <div className="space-y-1.5">
+              <span className="text-[10px] uppercase font-mono text-brand-muted block">
+                {settings.integracion.proveedor === 'thefork'
+                  ? 'Dirección para TheFork (campo receiptOpeningUrl)'
+                  : 'Dirección del webhook'}
+              </span>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-[10px] font-mono text-brand-text bg-brand-surface border border-brand-outline rounded px-2 py-1.5 truncate">
+                  {settings.integracion.webhookUrl}
+                </code>
+                <button
+                  onClick={() => copiarTexto(settings.integracion.webhookUrl, 'url')}
+                  className="p-1.5 rounded-lg border border-brand-outline hover:border-brand-primary/40 text-brand-text cursor-pointer"
+                  title="Copiar dirección"
+                >
+                  {copiadoInteg === 'url' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            {settings.integracion.authMode === 'bearer' && (
+              <div className="space-y-1.5">
+                <span className="text-[10px] uppercase font-mono text-brand-muted block">
+                  Token de acceso (lo entregas a la plataforma)
+                </span>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-[10px] font-mono text-brand-text bg-brand-surface border border-brand-outline rounded px-2 py-1.5 truncate">
+                    {settings.integracion.accessToken}
+                  </code>
+                  <button
+                    onClick={() => copiarTexto(settings.integracion.accessToken, 'token')}
+                    className="p-1.5 rounded-lg border border-brand-outline hover:border-brand-primary/40 text-brand-text cursor-pointer"
+                    title="Copiar token"
+                  >
+                    {copiadoInteg === 'token' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                <p className="text-[9px] text-brand-muted/70">
+                  La plataforma nos lo devuelve en cada aviso para demostrar que es ella. Trátalo como una contraseña.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          <button onClick={guardarIntegracion} disabled={ocupadoInteg !== null} className={`${btn} bg-brand-primary text-brand-surface hover:bg-brand-primary/90`}>
+            {ocupadoInteg === 'save' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}{' '}
+            {settings.integracion?.activa ? 'Guardar cambios' : 'Conectar plataforma'}
+          </button>
+          {settings.integracion?.activa && (
+            <>
+              <button onClick={comprobarIntegracion} disabled={ocupadoInteg !== null} className={`${btn} bg-brand-surface-high border border-brand-outline text-brand-text hover:border-brand-primary/40`}>
+                {ocupadoInteg === 'test' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4 text-brand-primary" />} Comprobar estado
+              </button>
+              <button onClick={regenerarToken} disabled={ocupadoInteg !== null} className={`${btn} bg-brand-surface-high border border-brand-outline text-brand-text hover:border-brand-primary/40`}>
+                {ocupadoInteg === 'rotate' ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4 text-brand-primary" />} Regenerar token
+              </button>
+              <button onClick={desconectarIntegracion} disabled={ocupadoInteg !== null} className={`${btn} border border-red-500/25 text-red-400 hover:bg-red-500/10`}>
+                <Unplug className="w-4 h-4" /> Desconectar
+              </button>
+            </>
+          )}
+        </div>
+        <Aviso estado={estadoInteg} />
       </Tarjeta>
 
       {/* --- Cuenta --- */}

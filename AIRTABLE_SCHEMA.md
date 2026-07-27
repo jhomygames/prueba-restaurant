@@ -32,6 +32,12 @@ a mano: usa `node scripts/provision-restaurant.js --nombre "..." --email ...`.
 | TwilioAccountSid | Single line text | cuenta Twilio propia (vacío = usar la central) |
 | TwilioAuthTokenEnc | Long text | auth token **cifrado** |
 | TwilioWhatsAppFrom | Single line text | `whatsapp:+1...` del local; resuelve el tenant en WhatsApp |
+| IntegracionProveedor | Single select | `thefork` / `demo` (vacío = sin plataforma conectada) |
+| IntegracionApiKeyEnc | Long text | clave de la plataforma, **cifrada** (hoy opcional) |
+| IntegracionRestauranteId | Single line text | id del local EN la plataforma |
+| IntegracionWebhookSecretEnc | Long text | token **cifrado** que autentica los avisos entrantes; para TheFork es el `ACCESS_TOKEN` que le entregamos |
+| IntegracionActiva | Checkbox | si no está marcada, el webhook responde 403 |
+| IntegracionUltimaSync | Single line text | ISO; cursor para los conectores que se sondean |
 
 ### Tabla `Usuarios`
 
@@ -74,6 +80,8 @@ una versión enmascarada.
 | Mesa | Link to another record → `Mesas` | mesa asignada |
 | Estado | Single select | confirmada / cancelada / completada |
 | Notas | Long text | alergias, ocasión especial, etc. |
+| Origen | Single select | de dónde vino: `panel`, `voz`, `whatsapp`, `thefork`, `demo` |
+| ExternalId | Single line text | su id en la plataforma externa; es la clave que evita duplicar una reserva al reprocesar su webhook |
 
 **Por qué `FechaHora` es texto y no un campo Date real**: Airtable normaliza
 los campos Date a UTC según la config de zona horaria de la base, lo que

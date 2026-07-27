@@ -18,6 +18,7 @@ const twilio = require("twilio");
 const reservations = require("../services/reservations");
 const customerMemory = require("../services/customerMemory");
 const registry = require("../services/registry");
+const connectors = require("../services/connectors");
 
 const router = express.Router();
 
@@ -96,9 +97,47 @@ router.post("/internal/reminders/run", requireInternalSecret, async (req, res) =
       }
     }
 
-    res.json({ ok: true, restaurantes: restaurants.length, processed: results.length, results });
+    // El plan Free de Make solo permite 2 escenarios, así que en vez de gastar
+    // un tercero para las integraciones, este mismo disparo puede encadenar la
+    // sincronización con las plataformas externas: basta llamar con ?with_sync=1
+    let sync;
+    if (req.query.with_sync === "1" || req.query.with_sync === "true") {
+      sync = await syncIntegraciones();
+    }
+
+    res.json({ ok: true, restaurantes: restaurants.length, processed: results.length, results, sync });
   } catch (err) {
     console.error("[internalJobs] error en reminders/run:", err);
+    res.status(500).json({ ok: false, error: "internal_error" });
+  }
+});
+
+/**
+ * Sondea las plataformas externas de todos los restaurantes que tengan un
+ * conector activo. Los conectores que funcionan por webhook (TheFork) no hacen
+ * nada aquí: son ellos los que nos llaman.
+ */
+async function syncIntegraciones() {
+  const restaurants = await registry.activeRestaurants();
+  const results = [];
+  for (const restaurant of restaurants) {
+    if (!restaurant.integracion || restaurant.integracion.activa !== true) continue;
+    try {
+      results.push(await connectors.syncTenant(restaurant));
+    } catch (err) {
+      // Un restaurante con la integración rota no debe frenar a los demás.
+      console.error(`[internalJobs] error sincronizando ${restaurant.slug}:`, err.message);
+      results.push({ restaurante: restaurant.slug, error: err.message });
+    }
+  }
+  return { restaurantes: results.length, results };
+}
+
+router.post("/internal/integrations/sync", requireInternalSecret, async (req, res) => {
+  try {
+    res.json({ ok: true, ...(await syncIntegraciones()) });
+  } catch (err) {
+    console.error("[internalJobs] error en integrations/sync:", err);
     res.status(500).json({ ok: false, error: "internal_error" });
   }
 });

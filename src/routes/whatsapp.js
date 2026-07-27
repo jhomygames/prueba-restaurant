@@ -121,6 +121,7 @@ async function runClaudeLoop(restaurant, phone, userMessage) {
         const result = await dispatchTool(block.name, block.input, {
           customer_phone: phone,
           restaurant,
+          channel: "whatsapp",
         });
         return {
           type: "tool_result",

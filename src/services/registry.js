@@ -51,6 +51,15 @@ function toRestaurant(rec) {
       authTokenEnc: f.TwilioAuthTokenEnc || "",
       whatsappFrom: f.TwilioWhatsAppFrom || "",
     },
+    // Conector con una plataforma de reservas externa (TheFork, etc.)
+    integracion: {
+      proveedor: f.IntegracionProveedor || "",
+      apiKeyEnc: f.IntegracionApiKeyEnc || "",
+      restauranteExternoId: f.IntegracionRestauranteId || "",
+      webhookSecretEnc: f.IntegracionWebhookSecretEnc || "",
+      activa: f.IntegracionActiva === true,
+      ultimaSync: f.IntegracionUltimaSync || "",
+    },
   };
 }
 

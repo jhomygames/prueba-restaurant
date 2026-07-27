@@ -90,6 +90,7 @@ router.post("/vapi/tools", async (req, res) => {
         const result = await dispatchTool(name, args, {
           customer_phone: customerPhone,
           restaurant,
+          channel: "voz",
         });
         return { toolCallId: call.id, result: JSON.stringify(result) };
       } catch (err) {
