@@ -10,7 +10,9 @@
  */
 
 const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 const thefork = require(path.join(__dirname, "..", "src/services/connectors/thefork"));
+const { quote } = require(path.join(__dirname, "..", "src/services/airtableClient"));
 
 let fallos = 0;
 function check(nombre, real, esperado) {
@@ -93,6 +95,14 @@ check("token incorrecto", thefork.verifyAuth({ headers: { authorization: `Bearer
 check("otra longitud", thefork.verifyAuth({ headers: { authorization: "Bearer corto" } }, TOKEN), false);
 check("sin header", thefork.verifyAuth({ headers: {} }, TOKEN), false);
 check("sin token esperado", thefork.verifyAuth({ headers: { authorization: `Bearer ${TOKEN}` } }, ""), false);
+
+// Airtable no admite \' dentro de comillas simples: un id con apóstrofo tumbaba
+// la consulta de deduplicación entera. Este caso vigila que no vuelva a pasar.
+console.log("\n7) Escapado de valores en fórmulas de Airtable:");
+check("comilla simple", quote("O'Brien"), '"O\'Brien"');
+check("comilla doble escapada", quote('a"b'), '"a\\"b"');
+check("barra invertida escapada", quote("a\\b"), '"a\\\\b"');
+check("valor normal", quote("DEMO-123"), '"DEMO-123"');
 
 console.log(`\n${fallos === 0 ? "TODO CORRECTO" : `${fallos} FALLO(S)`}\n`);
 process.exit(fallos === 0 ? 0 : 1);

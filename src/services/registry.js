@@ -173,7 +173,7 @@ async function findUserByEmail(email) {
   // Sin caché: el login es poco frecuente y no queremos servir hashes viejos
   // tras un cambio de contraseña.
   const records = await airtable.listRecords(registroBaseId(), T_USUARIOS, {
-    filterByFormula: `LOWER({Email}) = '${target.replace(/'/g, "\\'")}'`,
+    filterByFormula: `LOWER({Email}) = ${airtable.quote(target)}`,
     maxRecords: 1,
   });
   return records[0] ? toUser(records[0]) : null;

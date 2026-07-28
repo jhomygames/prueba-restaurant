@@ -20,7 +20,7 @@
  * offer, prepayment, tables.
  */
 
-const crypto = require("crypto");
+const { safeCompare } = require("../secretBox");
 
 const NOMBRE = "thefork";
 
@@ -108,20 +108,11 @@ function parseWebhook(body) {
   };
 }
 
-/**
- * Compara el Bearer recibido contra el token esperado en tiempo constante,
- * para no filtrar información por cuánto tarda la comparación.
- */
+/** Extrae y compara el Bearer que manda TheFork contra el token esperado. */
 function verifyAuth(req, expectedToken) {
-  if (!expectedToken) return false;
   const header = req.headers?.authorization || "";
   const recibido = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-  if (!recibido) return false;
-
-  const a = Buffer.from(recibido);
-  const b = Buffer.from(String(expectedToken));
-  if (a.length !== b.length) return false; // timingSafeEqual exige igual longitud
-  return crypto.timingSafeEqual(a, b);
+  return safeCompare(recibido, expectedToken);
 }
 
 /** TheFork empuja, no se sondea. Se declara para encajar en el pipeline común. */

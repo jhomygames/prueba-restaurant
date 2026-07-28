@@ -36,18 +36,14 @@ function listAdapters() {
   }));
 }
 
-/** Escapa comillas simples para meter un valor en una fórmula de Airtable. */
-function esc(v) {
-  return String(v).replace(/'/g, "\\'");
-}
-
 /**
  * Busca una reserva ya importada de esa plataforma. Es lo que hace que reenviar
  * el mismo webhook no cree duplicados.
  */
 async function findByExternalId(ctx, provider, externalId) {
+  const { quote } = airtable;
   const records = await airtable.listRecords(ctx.baseId, TABLE_RESERVAS, {
-    filterByFormula: `AND({Origen} = '${esc(provider)}', {ExternalId} = '${esc(externalId)}')`,
+    filterByFormula: `AND({Origen} = ${quote(provider)}, {ExternalId} = ${quote(externalId)})`,
     maxRecords: 1,
   });
   return records[0] || null;
@@ -190,9 +186,14 @@ async function syncTenant(restaurant) {
     }
   }
 
-  await registry
-    .updateRestaurant(restaurant.id, { IntegracionUltimaSync: new Date().toISOString() })
-    .catch((err) => console.error("[connectors] no se pudo guardar UltimaSync:", err.message));
+  // Solo escribimos el cursor si hubo algo que sincronizar: cada escritura
+  // invalida la caché del registro, y no tiene sentido tirarla cada 15 minutos
+  // por una consulta que no trajo nada.
+  if (externas.length > 0) {
+    await registry
+      .updateRestaurant(restaurant.id, { IntegracionUltimaSync: new Date().toISOString() })
+      .catch((err) => console.error("[connectors] no se pudo guardar UltimaSync:", err.message));
+  }
 
   return { restaurante: restaurant.slug, proveedor: creds.provider, procesadas: resultados.length, resultados };
 }

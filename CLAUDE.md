@@ -14,6 +14,10 @@ con dos canales que comparten el mismo backend y las mismas herramientas:
   recordatorios anti no-show (24h y 1h antes) + solicitud de reseña Google post-visita +
   memoria básica de clientes habituales.
 
+> **Registro de cambios**: `REGISTRO_DE_CAMBIOS.md` lleva el historial sesión por
+> sesión (qué se hizo, qué se verificó, qué falló y qué quedó pendiente).
+> **Al terminar cada sesión de trabajo hay que añadir ahí un bloque nuevo.**
+
 ## Decisiones tomadas (no volver a preguntar esto)
 
 - **Sistema de reservas (actualizado 2026-07-08)**: se descartó Covermanager/TheFork para

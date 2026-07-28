@@ -59,6 +59,19 @@ function decrypt(stored) {
   }
 }
 
+/**
+ * Compara dos secretos sin filtrar información por el tiempo que tarda.
+ * Una comparación normal (`===`) se detiene en el primer carácter distinto, lo
+ * que permitiría a un atacante deducir el secreto midiendo respuestas.
+ */
+function safeCompare(a, b) {
+  if (!a || !b) return false;
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) return false; // timingSafeEqual lo exige
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 /** "SK1234...cdef" -> "SK12…cdef" para mostrar en el panel sin exponer el valor. */
 function mask(value) {
   if (!value) return "";
@@ -67,4 +80,4 @@ function mask(value) {
   return `${s.slice(0, 4)}…${s.slice(-4)}`;
 }
 
-module.exports = { encrypt, decrypt, mask };
+module.exports = { encrypt, decrypt, mask, safeCompare };

@@ -23,7 +23,7 @@
 const express = require("express");
 const registry = require("../services/registry");
 const connectors = require("../services/connectors");
-const { decrypt } = require("../services/secretBox");
+const { safeCompare } = require("../services/secretBox");
 
 const router = express.Router();
 
@@ -56,7 +56,7 @@ router.post("/integrations/:provider/webhook/:slug", async (req, res) => {
     const autenticado =
       adapter.authMode === "bearer"
         ? adapter.verifyAuth(req, creds.webhookSecret)
-        : String(req.query.secret || "") === creds.webhookSecret && Boolean(creds.webhookSecret);
+        : safeCompare(req.query.secret, creds.webhookSecret);
 
     if (!autenticado) {
       console.warn(`[integrations] ${slug}/${provider}: autenticación del webhook fallida`);

@@ -17,7 +17,7 @@
  * distintas zonas horarias, migrar a timestamps reales con zona explícita.
  */
 
-const { listRecords, createRecord, updateRecord } = require("./airtableClient");
+const { listRecords, createRecord, updateRecord, quote } = require("./airtableClient");
 
 const TABLE_MESAS = "Mesas";
 const TABLE_RESERVAS = "Reservas";
@@ -57,7 +57,7 @@ async function findAvailableTable(ctx, date, time, party_size) {
       filterByFormula: `AND({Capacidad} >= ${Number(party_size)}, {Estado} != 'Fuera de servicio')`,
     }),
     listRecords(ctx.baseId, TABLE_RESERVAS, {
-      filterByFormula: `AND({FechaHora} = '${targetFH}', {Estado} = 'confirmada')`,
+      filterByFormula: `AND({FechaHora} = ${quote(targetFH)}, {Estado} = 'confirmada')`,
     }),
   ]);
 
@@ -123,7 +123,7 @@ async function cancelReservation(ctx, { reservation_id, customer_phone, date }) 
     record = { id: reservation_id };
   } else {
     const candidates = await listRecords(ctx.baseId, TABLE_RESERVAS, {
-      filterByFormula: `AND({ClienteTelefono} = '${customer_phone}', LEFT({FechaHora}, 10) = '${date}', {Estado} = 'confirmada')`,
+      filterByFormula: `AND({ClienteTelefono} = ${quote(customer_phone)}, LEFT({FechaHora}, 10) = ${quote(date)}, {Estado} = 'confirmada')`,
     });
     record = candidates[0];
   }

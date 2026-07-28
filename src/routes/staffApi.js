@@ -197,7 +197,7 @@ router.get(
   handle(async (req, res) => {
     const opts = { sort: [{ field: "FechaHora", direction: "asc" }] };
     if (req.query.date) {
-      opts.filterByFormula = `FIND('${req.query.date}', {FechaHora}) = 1`;
+      opts.filterByFormula = `FIND(${airtable.quote(req.query.date)}, {FechaHora}) = 1`;
     }
     const records = await airtable.listRecords(req.restaurant.baseId, RESERVAS, opts);
     res.json(records.map(toAppReservation));

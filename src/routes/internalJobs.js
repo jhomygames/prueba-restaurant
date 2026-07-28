@@ -102,7 +102,12 @@ router.post("/internal/reminders/run", requireInternalSecret, async (req, res) =
     // sincronización con las plataformas externas: basta llamar con ?with_sync=1
     let sync;
     if (req.query.with_sync === "1" || req.query.with_sync === "true") {
-      sync = await syncIntegraciones();
+      // Si la sincronización falla no debe invalidar los recordatorios que ya
+      // se enviaron: se reporta el error dentro de la respuesta, no como 500.
+      sync = await syncIntegraciones().catch((err) => {
+        console.error("[internalJobs] error en la sincronización encadenada:", err.message);
+        return { error: err.message };
+      });
     }
 
     res.json({ ok: true, restaurantes: restaurants.length, processed: results.length, results, sync });
