@@ -68,6 +68,34 @@ src/
 
 ---
 
+## Sesión 2026-07-27 (noche) · Despliegue de las integraciones
+
+La rama `dev/integraciones-terceros` se fusionó en `main` y se desplegó. Antes
+de subir se comprobó que ningún secreto entrara en el diff.
+
+**Verificado en producción, no solo en local:**
+
+- Lo que ya funcionaba sigue igual: login de los dos restaurantes, 15 mesas y
+  38 platos de Gourmeats, y sus 8 reservas ahora con su origen marcado.
+- El arreglo del escapado: un email con apóstrofo devuelve `401` en vez del
+  `500` que daba antes.
+- La capa nueva: el webhook existe y exige autenticación (`401` sin secreto),
+  un restaurante inexistente da `404`, y la pestaña Configuración ya ofrece las
+  dos plataformas.
+- **Prueba real de punta a punta**: se activó el conector demo desde la API,
+  se envió una reserva por el webhook público y apareció en el panel con su
+  mesa asignada y su etiqueta de origen. Datos de prueba borrados después.
+
+**Detalle a recordar**: Railway compila el panel por su cuenta, así que el
+identificador del archivo generado NO coincide con el del build local. Para
+saber si un despliegue ya está vivo hay que mirar el comportamiento (por
+ejemplo, que una ruta nueva deje de dar 404), no comparar ese identificador.
+
+**Estado**: el conector demo queda activo en el restaurante de pruebas, listo
+para enganchar el flujo de n8n.
+
+---
+
 ## Sesión 2026-07-27 (tarde) · Revisión de código
 
 **Qué se hizo**: repaso del código de las integraciones con ojos frescos, antes
