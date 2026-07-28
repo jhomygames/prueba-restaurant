@@ -12,9 +12,11 @@
  */
 
 const express = require("express");
+const crypto = require("crypto");
 const twilio = require("twilio");
 const registry = require("../services/registry");
 const vapiAdmin = require("../services/vapiAdmin");
+const connectors = require("../services/connectors");
 const { encrypt, decrypt, mask } = require("../services/secretBox");
 const { requireAuth } = require("./auth");
 
@@ -75,6 +77,43 @@ function toPublicSettings(r, req) {
       authTokenMasked: r.twilio.authTokenEnc ? "••••••••" : "",
       webhookUrl: `${publicBaseUrl(req)}/whatsapp/webhook`,
     },
+    integracion: toPublicIntegration(r, req),
+  };
+}
+
+/**
+ * Bloque de la integración con plataformas externas.
+ *
+ * El "token de acceso" SÍ se devuelve en claro, a diferencia de las demás
+ * credenciales: no es un secreto de un tercero que nosotros custodiamos, sino
+ * uno que generamos nosotros y que el restaurante tiene que copiar para
+ * dárselo a la plataforma (TheFork lo pide durante el alta). Solo lo ve el
+ * dueño de ese restaurante, ya autenticado. Está cifrado en la base de datos.
+ */
+function toPublicIntegration(r, req) {
+  const i = r.integracion || {};
+  const proveedor = i.proveedor || "";
+  const apiKey = i.apiKeyEnc ? decrypt(i.apiKeyEnc) : "";
+  const webhookSecret = i.webhookSecretEnc ? decrypt(i.webhookSecretEnc) : "";
+
+  const adapter = proveedor ? connectors.getAdapter(proveedor) : null;
+  let webhookUrl = "";
+  if (proveedor && webhookSecret) {
+    const base = `${publicBaseUrl(req)}/integrations/${proveedor}/webhook/${r.slug}`;
+    // Los que se autentican con Bearer no llevan el secreto en la URL.
+    webhookUrl = adapter?.authMode === "bearer" ? base : `${base}?secret=${encodeURIComponent(webhookSecret)}`;
+  }
+
+  return {
+    proveedores: connectors.listAdapters(),
+    proveedor,
+    activa: i.activa === true,
+    restauranteExternoId: i.restauranteExternoId || "",
+    apiKeyMasked: apiKey ? mask(apiKey) : "",
+    authMode: adapter?.authMode || "",
+    accessToken: webhookSecret,
+    webhookUrl,
+    ultimaSync: i.ultimaSync || "",
   };
 }
 
@@ -261,6 +300,103 @@ router.post(
       // Los errores de Twilio son informativos (número no unido al sandbox, etc.)
       res.status(400).json({ ok: false, error: err.message });
     }
+  })
+);
+
+// ---------- Plataformas de reservas externas (TheFork, etc.) ----------
+
+router.put(
+  "/api/settings/integration",
+  handle(async (req, res) => {
+    const { provider, apiKey, restauranteExternoId } = req.body || {};
+
+    // Sin proveedor = desconectar y limpiar todo.
+    if (!provider) {
+      const updated = await registry.updateRestaurant(req.restaurant.id, {
+        IntegracionProveedor: "",
+        IntegracionApiKeyEnc: "",
+        IntegracionRestauranteId: "",
+        IntegracionWebhookSecretEnc: "",
+        IntegracionActiva: false,
+      });
+      return res.json(toPublicIntegration(updated, req));
+    }
+
+    if (!connectors.getAdapter(provider)) {
+      return res.status(400).json({ error: "proveedor_desconocido" });
+    }
+
+    const fields = {
+      IntegracionProveedor: provider,
+      IntegracionActiva: true,
+    };
+    if (restauranteExternoId !== undefined) {
+      fields.IntegracionRestauranteId = String(restauranteExternoId || "").trim();
+    }
+    // Si no mandan clave nueva, se conserva la que hubiera.
+    if (apiKey) fields.IntegracionApiKeyEnc = encrypt(String(apiKey).trim());
+
+    // El token que autentica los webhooks entrantes lo generamos nosotros una
+    // sola vez: es el que el restaurante le entrega a la plataforma.
+    const yaTiene = req.restaurant.integracion?.webhookSecretEnc;
+    if (!yaTiene) {
+      fields.IntegracionWebhookSecretEnc = encrypt(crypto.randomBytes(32).toString("hex"));
+    }
+
+    const updated = await registry.updateRestaurant(req.restaurant.id, fields);
+    res.json(toPublicIntegration(updated, req));
+  })
+);
+
+/** Regenera el token de acceso (por si se filtró o la plataforma pide uno nuevo). */
+router.post(
+  "/api/settings/integration/rotate-token",
+  handle(async (req, res) => {
+    if (tooManyActions(req.restaurant.id)) {
+      return res.status(429).json({ error: "demasiadas_acciones" });
+    }
+    if (!req.restaurant.integracion?.proveedor) {
+      return res.status(400).json({ error: "sin_integracion" });
+    }
+    const updated = await registry.updateRestaurant(req.restaurant.id, {
+      IntegracionWebhookSecretEnc: encrypt(crypto.randomBytes(32).toString("hex")),
+    });
+    res.json({
+      ...toPublicIntegration(updated, req),
+      aviso: "Token regenerado. Actualízalo en la plataforma o dejará de aceptar sus avisos.",
+    });
+  })
+);
+
+/**
+ * Comprobación de estado. No puede llamar a la plataforma (TheFork no expone
+ * un endpoint de validación público), así que verifica lo que sí depende de
+ * nosotros: que el conector esté completo y listo para recibir.
+ */
+router.post(
+  "/api/settings/integration/test",
+  handle(async (req, res) => {
+    const creds = connectors.integrationCredentials(req.restaurant);
+    if (!creds || !creds.provider) return res.status(400).json({ error: "sin_integracion" });
+
+    const adapter = connectors.getAdapter(creds.provider);
+    const problemas = [];
+    if (!creds.activa) problemas.push("La integración está desactivada.");
+    if (!creds.webhookSecret) problemas.push("Falta el token de acceso para autenticar los avisos.");
+    if (!process.env.PUBLIC_BASE_URL) {
+      problemas.push("Falta configurar la dirección pública del servidor (PUBLIC_BASE_URL).");
+    }
+
+    res.json({
+      ok: problemas.length === 0,
+      proveedor: adapter?.etiqueta || creds.provider,
+      recibePor: adapter?.authMode === "bearer" ? "webhook con token Bearer" : "webhook con secreto en la URL",
+      problemas,
+      nota:
+        adapter?.authMode === "bearer"
+          ? "No podemos comprobar la conexión desde aquí: es la plataforma quien nos llama. La prueba real es hacer una reserva en ella."
+          : undefined,
+    });
   })
 );
 

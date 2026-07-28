@@ -83,6 +83,16 @@ const TABLAS = [
       { name: "SentadaAt", type: "singleLineText" },
       { name: "Alergias", type: "multipleSelects", options: { choices: ALERGENOS_CHOICES } },
       { name: "DuracionMin", type: "number", options: { precision: 0 } },
+      // Integraciones con plataformas externas (TheFork…): de dónde vino la
+      // reserva y su id allí, que es lo que evita duplicarla al reprocesar.
+      {
+        name: "Origen",
+        type: "singleSelect",
+        options: {
+          choices: ["panel", "voz", "whatsapp", "thefork", "demo"].map((name) => ({ name })),
+        },
+      },
+      { name: "ExternalId", type: "singleLineText" },
     ],
   },
   {

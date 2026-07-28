@@ -15,6 +15,23 @@
 
 const AIRTABLE_API_BASE = "https://api.airtable.com/v0";
 
+/**
+ * Mete un valor dentro de una fórmula de Airtable de forma segura.
+ *
+ * Devuelve el literal YA ENTRECOMILLADO, así que se usa sin comillas alrededor:
+ *   filterByFormula: `{Telefono} = ${quote(phone)}`
+ *
+ * Airtable NO admite `\'` dentro de una cadena entre comillas simples: una
+ * comilla en el valor rompe la fórmula entera (error 422). Lo que sí funciona
+ * es entrecomillar con comillas dobles y escapar con barra invertida. Sin esto,
+ * cualquier dato con un apóstrofo — un apellido como O'Brien, o el id de una
+ * reserva externa — tumbaba la consulta.
+ */
+function quote(value) {
+  const escaped = String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `"${escaped}"`;
+}
+
 function assertConfigured(baseId) {
   const { AIRTABLE_API_KEY } = process.env;
   if (!AIRTABLE_API_KEY) {
@@ -103,4 +120,4 @@ async function deleteRecord(baseId, table, recordId) {
   return airtableFetch(baseId, table, `/${recordId}`, { method: "DELETE" });
 }
 
-module.exports = { listRecords, getRecord, createRecord, updateRecord, deleteRecord };
+module.exports = { listRecords, getRecord, createRecord, updateRecord, deleteRecord, quote };

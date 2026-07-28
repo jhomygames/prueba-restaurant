@@ -13,6 +13,17 @@ interface CalendarViewProps {
   onCompleteReservation: (id: string) => void;
 }
 
+/**
+ * Cómo se muestra cada origen. El panel no lleva chip: es lo esperado por
+ * defecto y marcarlo sería ruido.
+ */
+const ORIGENES: Record<string, { texto: string; clase: string }> = {
+  voz: { texto: 'Voz', clase: 'bg-brand-primary/10 text-brand-primary border-brand-primary/30' },
+  whatsapp: { texto: 'WhatsApp', clase: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' },
+  thefork: { texto: 'TheFork', clase: 'bg-teal-500/10 text-teal-300 border-teal-500/30' },
+  demo: { texto: 'Demo', clase: 'bg-brand-outline/40 text-brand-muted border-brand-outline' },
+};
+
 export const CalendarView: React.FC<CalendarViewProps> = ({
   reservations,
   tables,
@@ -230,6 +241,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         : res.status === 'pending' ? 'Pendiente'
                         : 'Confirmado'}
                     </span>
+
+                    {/* Origen: solo si no vino del propio panel */}
+                    {res.source && ORIGENES[res.source] && (
+                      <span
+                        className={`text-[9px] uppercase font-mono px-1.5 py-0.5 rounded font-bold border ${ORIGENES[res.source].clase}`}
+                        title={`Reserva recibida desde ${ORIGENES[res.source].texto}`}
+                      >
+                        {ORIGENES[res.source].texto}
+                      </span>
+                    )}
                   </div>
 
                   {/* Notes / Allergies row */}

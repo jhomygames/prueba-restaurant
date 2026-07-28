@@ -162,10 +162,18 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
         const fresh = remoteReservations.filter(
           (r) => !knownReservationIds.current!.has(r.id) && r.status !== 'cancelled'
         );
+        const NOMBRE_ORIGEN: Record<string, string> = {
+          voz: 'el agente de voz',
+          whatsapp: 'WhatsApp',
+          thefork: 'TheFork',
+          demo: 'la plataforma de pruebas',
+          panel: 'el panel',
+        };
         for (const r of fresh) {
+          const origen = NOMBRE_ORIGEN[r.source || ''] || 'otro dispositivo';
           addNotificationLog(
             'Nueva Reserva Recibida',
-            `${r.customerName} (${r.pax} pax) para el ${r.date} a las ${r.time}. Origen: agente de voz, WhatsApp u otro dispositivo.`,
+            `${r.customerName} (${r.pax} pax) para el ${r.date} a las ${r.time}. Llegó desde ${origen}.`,
             'incoming_call'
           );
         }

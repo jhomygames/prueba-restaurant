@@ -9,7 +9,7 @@
  * recordId interno), así que buscamos por fórmula sobre el campo Telefono.
  */
 
-const { listRecords, createRecord, updateRecord } = require("./airtableClient");
+const { listRecords, createRecord, updateRecord, quote } = require("./airtableClient");
 
 const TABLE_CLIENTES = "Clientes";
 
@@ -29,7 +29,7 @@ function toCustomerShape(record) {
 
 async function findCustomerRecord(ctx, phone) {
   const matches = await listRecords(ctx.baseId, TABLE_CLIENTES, {
-    filterByFormula: `{Telefono} = '${phone}'`,
+    filterByFormula: `{Telefono} = ${quote(phone)}`,
     maxRecords: 1,
   });
   return matches[0] || null;

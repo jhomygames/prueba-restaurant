@@ -51,6 +51,15 @@ function toRestaurant(rec) {
       authTokenEnc: f.TwilioAuthTokenEnc || "",
       whatsappFrom: f.TwilioWhatsAppFrom || "",
     },
+    // Conector con una plataforma de reservas externa (TheFork, etc.)
+    integracion: {
+      proveedor: f.IntegracionProveedor || "",
+      apiKeyEnc: f.IntegracionApiKeyEnc || "",
+      restauranteExternoId: f.IntegracionRestauranteId || "",
+      webhookSecretEnc: f.IntegracionWebhookSecretEnc || "",
+      activa: f.IntegracionActiva === true,
+      ultimaSync: f.IntegracionUltimaSync || "",
+    },
   };
 }
 
@@ -164,7 +173,7 @@ async function findUserByEmail(email) {
   // Sin caché: el login es poco frecuente y no queremos servir hashes viejos
   // tras un cambio de contraseña.
   const records = await airtable.listRecords(registroBaseId(), T_USUARIOS, {
-    filterByFormula: `LOWER({Email}) = '${target.replace(/'/g, "\\'")}'`,
+    filterByFormula: `LOWER({Email}) = ${airtable.quote(target)}`,
     maxRecords: 1,
   });
   return records[0] ? toUser(records[0]) : null;

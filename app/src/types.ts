@@ -44,6 +44,10 @@ export interface Reservation {
   createdAt: string;
   seatedAt?: string;
   customDurationMinutes?: number;
+  /** De dónde vino: panel, voz, whatsapp, o el id de una plataforma externa. */
+  source?: string;
+  /** Su identificador en la plataforma externa, si vino de una. */
+  externalId?: string;
 }
 
 export type NotificationType = 'daily_reminder' | '15_min_before' | 'incoming_call' | 'system';

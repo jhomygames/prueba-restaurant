@@ -103,7 +103,11 @@ router.post("/api/call/agent", async (req, res) => {
           if (block.name === "create_reservation" || block.name === "cancel_reservation") {
             args.customer_phone = args.customer_phone || phone;
           }
-          const result = await dispatchTool(block.name, args, { customer_phone: phone, restaurant: req.restaurant });
+          const result = await dispatchTool(block.name, args, {
+            customer_phone: phone,
+            restaurant: req.restaurant,
+            channel: "voz",
+          });
           toolActivity.push({ name: block.name, args });
           if (block.name === "create_reservation" && result && result.created) {
             reservation = {

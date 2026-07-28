@@ -92,6 +92,9 @@ function toAppReservation(rec) {
     createdAt: rec.createdTime,
     seatedAt: f.SentadaAt || undefined,
     customDurationMinutes: f.DuracionMin || undefined,
+    // De donde vino: panel, voz, whatsapp o una plataforma externa.
+    source: f.Origen || 'panel',
+    externalId: f.ExternalId || undefined,
   };
 }
 
@@ -112,6 +115,7 @@ function toReservaFields(body) {
   if (body.allergies !== undefined) f.Alergias = body.allergies;
   if (body.seatedAt !== undefined) f.SentadaAt = body.seatedAt;
   if (body.customDurationMinutes !== undefined) f.DuracionMin = body.customDurationMinutes;
+  if (body.source !== undefined) f.Origen = body.source;
   return f;
 }
 
@@ -193,7 +197,7 @@ router.get(
   handle(async (req, res) => {
     const opts = { sort: [{ field: "FechaHora", direction: "asc" }] };
     if (req.query.date) {
-      opts.filterByFormula = `FIND('${req.query.date}', {FechaHora}) = 1`;
+      opts.filterByFormula = `FIND(${airtable.quote(req.query.date)}, {FechaHora}) = 1`;
     }
     const records = await airtable.listRecords(req.restaurant.baseId, RESERVAS, opts);
     res.json(records.map(toAppReservation));
@@ -203,7 +207,10 @@ router.get(
 router.post(
   "/api/reservations",
   handle(async (req, res) => {
-    const rec = await airtable.createRecord(req.restaurant.baseId, RESERVAS, toReservaFields(req.body), {
+    // Lo que se crea desde el panel es, por definición, origen "panel" (salvo
+    // que quien llama diga otra cosa, p. ej. una integración interna).
+    const fields = { Origen: "panel", ...toReservaFields(req.body) };
+    const rec = await airtable.createRecord(req.restaurant.baseId, RESERVAS, fields, {
       typecast: true,
     });
     // Igual que el flujo de voz/WhatsApp: toda reserva registra al cliente.

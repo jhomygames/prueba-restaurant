@@ -14,6 +14,10 @@ con dos canales que comparten el mismo backend y las mismas herramientas:
   recordatorios anti no-show (24h y 1h antes) + solicitud de reseña Google post-visita +
   memoria básica de clientes habituales.
 
+> **Registro de cambios**: `REGISTRO_DE_CAMBIOS.md` lleva el historial sesión por
+> sesión (qué se hizo, qué se verificó, qué falló y qué quedó pendiente).
+> **Al terminar cada sesión de trabajo hay que añadir ahí un bloque nuevo.**
+
 ## Decisiones tomadas (no volver a preguntar esto)
 
 - **Sistema de reservas (actualizado 2026-07-08)**: se descartó Covermanager/TheFork para
@@ -126,6 +130,26 @@ con dos canales que comparten el mismo backend y las mismas herramientas:
   destino `To` (WhatsApp); `internalJobs` recorre los locales activos aislando errores (un
   restaurante caído no impide procesar el resto). Envs nuevas: `AUTH_JWT_SECRET`,
   `TENANT_SECRETS_KEY`, `REGISTRO_BASE_ID`. Se retiró `STAFF_API_KEY`/`x-staff-key`.
+- **Integraciones con plataformas de reservas (2026-07-27, rama `dev/integraciones-terceros`)**:
+  capa de conectores para que las reservas hechas en TheFork y similares entren solas en el
+  panel. Arquitectura: `src/services/connectors/` con un pipeline común
+  (`upsertExternalReservation`) y un adaptador por plataforma (~100 líneas cada uno).
+  El pipeline deduplica por `(Origen, ExternalId)`, asigna mesa con la misma lógica que el
+  agente de voz, registra al cliente y trata las cancelaciones; si no hay mesa libre la
+  reserva entra igualmente SIN mesa (la plataforma ya se la vendió al cliente: rechazarla
+  sería peor que mostrarla sin asignar).
+  Entrada por webhook público `POST /integrations/:provider/webhook/:slug` (el tenant sale
+  del slug, NUNCA del payload) y por sondeo `POST /internal/integrations/sync` — este último
+  también se puede encadenar al escenario de recordatorios con `?with_sync=1`, para no gastar
+  el tercer escenario que el plan Free de Make no permite.
+  **TheFork**: verificado contra `docs.thefork.io/POS-API/Flow/create-order` — ELLOS nos
+  llaman a la URL que registremos como `receiptOpeningUrl`, con `Authorization: Bearer` y
+  esperando un **204 sin cuerpo**. El adaptador mapea `orderId/dateOfMeal/startTime/partySize/
+  customer` y traslada `allergies`+`dietaryRestrictions` a las notas de la reserva. Probado
+  con `node scripts/test-thefork-parser.js` (22 casos, sin necesitar credenciales).
+  PENDIENTE de cuenta de partner: el catálogo real de `reservationStatus` y si existen flows
+  separados de update/cancel (las páginas de la doc dieron 403). Fuera de alcance v1: la
+  sincronización de SALIDA (publicar disponibilidad hacia la plataforma).
 - **Automatizaciones**: híbrido Claude Code + Make.com. Toda la lógica de negocio vive en
   el backend (`src/routes/internalJobs.js`); Make.com solo actúa como "reloj" que dispara
   un HTTP POST por horario. Se decidió así para no depender de módulos frágiles de Make

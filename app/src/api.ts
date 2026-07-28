@@ -143,11 +143,30 @@ export const deleteDish = (id: string) =>
 
 // ---------- Configuración del restaurante (integraciones) ----------
 
+export interface IntegrationProvider {
+  id: string;
+  label: string;
+  authMode: string;
+}
+
+export interface IntegrationSettings {
+  proveedores: IntegrationProvider[];
+  proveedor: string;
+  activa: boolean;
+  restauranteExternoId: string;
+  apiKeyMasked: string;
+  authMode: string;
+  accessToken: string;
+  webhookUrl: string;
+  ultimaSync: string;
+}
+
 export interface RestaurantSettings {
   slug: string;
   nombre: string;
   googleReviewUrl: string;
   staffWhatsApp: string;
+  integracion: IntegrationSettings;
   voz: {
     configured: boolean;
     assistantId: string;
@@ -192,6 +211,29 @@ export const testWhatsApp = (to: string) =>
     method: 'POST',
     body: JSON.stringify({ to }),
   });
+
+// ---------- Plataformas de reservas externas ----------
+
+export const saveIntegration = (data: {
+  provider: string | null;
+  apiKey?: string;
+  restauranteExternoId?: string;
+}) =>
+  req<IntegrationSettings>('/api/settings/integration', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+
+export const rotateIntegrationToken = () =>
+  req<IntegrationSettings & { aviso?: string }>('/api/settings/integration/rotate-token', {
+    method: 'POST',
+  });
+
+export const testIntegration = () =>
+  req<{ ok: boolean; proveedor: string; recibePor: string; problemas: string[]; nota?: string }>(
+    '/api/settings/integration/test',
+    { method: 'POST' }
+  );
 
 // Persistencia con debounce para el drag del plano: agrupa los updates de una
 // misma mesa y solo envía el último cuando el usuario deja de moverla.

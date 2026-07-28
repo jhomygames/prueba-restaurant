@@ -60,6 +60,10 @@ async function getMenuInfo(ctx, { category, exclude_allergen, dish_name }) {
  * `context.restaurant` es OBLIGATORIO: identifica el tenant (su base de datos y
  * su configuración). Cada canal lo resuelve a su manera antes de llamar aquí
  * (JWT en el panel, assistantId en Vapi, número destino en WhatsApp).
+ *
+ * `context.channel` indica desde qué canal se llama (`voz` | `whatsapp`), y se
+ * guarda en la reserva para poder distinguirla luego de las que llegan de
+ * plataformas externas.
  */
 async function dispatchTool(name, args, context = {}) {
   const restaurant = context.restaurant;
@@ -74,7 +78,10 @@ async function dispatchTool(name, args, context = {}) {
       return reservations.checkAvailability(ctx, args);
 
     case "create_reservation": {
-      const result = await reservations.createReservation(ctx, args);
+      const result = await reservations.createReservation(ctx, {
+        ...args,
+        source: context.channel || "voz",
+      });
       if (result.created) {
         // Guarda/actualiza el cliente en Airtable para que quede en la memoria de
         // clientes habituales, sin importar el canal (voz o WhatsApp).
