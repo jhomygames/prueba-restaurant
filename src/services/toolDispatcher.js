@@ -128,6 +128,27 @@ async function dispatchTool(name, args, context = {}) {
     case "find_reservation":
       return reservations.findReservation(ctx, args);
 
+    case "modify_reservation": {
+      const result = await reservations.modifyReservation(ctx, args);
+      if (result.modified) {
+        await history.registrar(ctx, {
+          accion: "modified",
+          canal: context.channel || "voz",
+          reservaId: result.reservation?.id,
+          codigo: result.reservation?.code,
+          antes: {
+            FechaHora: `${result.before.date} ${result.before.time}`,
+            Personas: result.before.party_size,
+          },
+          despues: {
+            FechaHora: `${result.reservation.date} ${result.reservation.time}`,
+            Personas: result.reservation.party_size,
+          },
+        });
+      }
+      return result;
+    }
+
     case "get_menu_info":
       return getMenuInfo(ctx, args);
 

@@ -68,6 +68,23 @@ const tools = [
     },
   },
   {
+    name: "modify_reservation",
+    description:
+      "Cambia la fecha, la hora o el número de personas de una reserva que ya existe. Úsala en vez de anular y volver a crear: así el cliente no se queda sin reserva si no hubiera sitio en el horario nuevo. Los datos que no envíes se mantienen como estaban.",
+    parameters: {
+      type: "object",
+      properties: {
+        code: { type: "string", description: "Código de la reserva, ej. RES-123456-789" },
+        customer_phone: { type: "string", description: "Teléfono, si no recuerda el código" },
+        date: { type: "string", description: "Fecha ACTUAL de la reserva, YYYY-MM-DD (solo si busca por teléfono)" },
+        new_date: { type: "string", description: "Nueva fecha en formato YYYY-MM-DD" },
+        new_time: { type: "string", description: "Nueva hora en formato HH:mm" },
+        new_party_size: { type: "integer", description: "Nuevo número de personas" },
+      },
+      required: [],
+    },
+  },
+  {
     name: "find_reservation",
     description:
       "Consulta una reserva existente SIN modificarla, para confirmarle al cliente su día, hora y número de personas. Búscala por código (lo más fiable) o, si no lo recuerda, por teléfono más fecha.",

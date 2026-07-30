@@ -86,7 +86,12 @@ function toReservationShape(record) {
   };
 }
 
-async function findAvailableTable(ctx, date, time, party_size) {
+/**
+ * `excluirReservaId` sirve al cambiar una reserva existente: su propia mesa no
+ * debe contarse como ocupada, o cambiar solo el número de personas sin mover la
+ * hora fallaría siempre por chocar consigo misma.
+ */
+async function findAvailableTable(ctx, date, time, party_size, excluirReservaId = null) {
   const targetFH = fechaHoraKey(date, time);
 
   const [mesas, reservasEnEseHorario] = await Promise.all([
@@ -99,7 +104,9 @@ async function findAvailableTable(ctx, date, time, party_size) {
   ]);
 
   const mesaIdsOcupadas = new Set(
-    reservasEnEseHorario.flatMap((r) => r.fields.Mesa || [])
+    reservasEnEseHorario
+      .filter((r) => r.id !== excluirReservaId)
+      .flatMap((r) => r.fields.Mesa || [])
   );
 
   const mesaLibre = mesas.find((m) => !mesaIdsOcupadas.has(m.id));
@@ -190,6 +197,38 @@ async function createReservation(
 }
 
 /**
+ * Filtro de teléfono tolerante: el número puede venir como "+34600111222" o
+ * como "600111222" según cómo lo transcribiera el agente, así que se comparan
+ * los últimos 9 dígitos cuando eso es fiable.
+ */
+function filtroTelefono(customer_phone) {
+  return phone.esClaveFiable(customer_phone)
+    ? `RIGHT(REGEX_REPLACE({ClienteTelefono} & "", "[^0-9]", ""), 9) = ${quote(phone.digitsKey(customer_phone))}`
+    : `{ClienteTelefono} = ${quote(customer_phone)}`;
+}
+
+/**
+ * Reservas confirmadas y aún no pasadas de un teléfono, de la más próxima en
+ * adelante. Es lo que necesita el cliente que llama preguntando qué tiene
+ * reservado sin recordar ni el código ni el día.
+ *
+ * El corte por fecha se hace en JavaScript y no en la fórmula de Airtable:
+ * comparar fechas como texto dentro de la fórmula es frágil, y el número de
+ * reservas por teléfono siempre es pequeño.
+ */
+async function findUpcomingByPhone(ctx, customer_phone) {
+  if (!customer_phone) return [];
+  const registros = await listRecords(ctx.baseId, TABLE_RESERVAS, {
+    filterByFormula: `AND(${filtroTelefono(customer_phone)}, {Estado} = 'confirmada')`,
+  });
+  const hoy = new Date().toISOString().slice(0, 10);
+  return registros
+    .map(toReservationShape)
+    .filter((r) => r.date >= hoy)
+    .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+}
+
+/**
  * Localiza una reserva confirmada. Se puede identificar de varias formas, de la
  * más precisa a la más tolerante:
  *   reservation_id — id interno (lo usa el panel)
@@ -217,14 +256,8 @@ async function findReservationRecord(ctx, { reservation_id, code, customer_phone
 
   if (!customer_phone || !date) return null;
 
-  // Mismo criterio tolerante que la ficha de cliente: el teléfono puede venir
-  // como "+34..." o sin prefijo según cómo lo transcribiera el agente.
-  const clave = phone.digitsKey(customer_phone);
-  const filtroTel = phone.esClaveFiable(customer_phone)
-    ? `RIGHT(REGEX_REPLACE({ClienteTelefono} & "", "[^0-9]", ""), 9) = ${quote(clave)}`
-    : `{ClienteTelefono} = ${quote(customer_phone)}`;
   const candidatas = await listRecords(ctx.baseId, TABLE_RESERVAS, {
-    filterByFormula: `AND(${filtroTel}, LEFT({FechaHora}, 10) = ${quote(date)}, {Estado} = 'confirmada')`,
+    filterByFormula: `AND(${filtroTelefono(customer_phone)}, LEFT({FechaHora}, 10) = ${quote(date)}, {Estado} = 'confirmada')`,
   });
 
   if (shift) {
@@ -237,11 +270,78 @@ async function findReservationRecord(ctx, { reservation_id, code, customer_phone
   return candidatas[0] || null;
 }
 
-/** Igual que findReservationRecord, pero devuelve la forma pública. */
-async function findReservation(ctx, criterios) {
+/**
+ * Consulta pública de reservas. Con código o con teléfono+fecha devuelve una
+ * concreta; con solo el teléfono, todas las que el cliente tenga por delante.
+ */
+async function findReservation(ctx, criterios = {}) {
+  const { code, reservation_id, customer_phone, date } = criterios;
+
+  if (!code && !reservation_id && customer_phone && !date) {
+    const proximas = await findUpcomingByPhone(ctx, customer_phone);
+    if (proximas.length === 0) return { found: false, reason: "not_found" };
+    // `reservation` es la más próxima; `reservations` las trae todas, para que
+    // el agente pueda desambiguar si el cliente tiene varias.
+    return { found: true, reservation: proximas[0], reservations: proximas };
+  }
+
   const record = await findReservationRecord(ctx, criterios);
   if (!record) return { found: false, reason: "not_found" };
   return { found: true, reservation: toReservationShape(record) };
+}
+
+/**
+ * Cambia fecha, hora y/o número de personas de una reserva ya existente.
+ *
+ * Se hace como una modificación y NO como "anular y crear de nuevo": si el alta
+ * fallara después de la baja, el cliente se quedaría sin reserva y sin saberlo.
+ * Aquí la reserva original solo se toca cuando ya hay mesa para los datos
+ * nuevos, así que un fallo deja las cosas como estaban.
+ *
+ * Los campos que no se envían conservan su valor actual.
+ */
+async function modifyReservation(ctx, { reservation_id, code, customer_phone, date, ...cambios }) {
+  const record = await findReservationRecord(ctx, { reservation_id, code, customer_phone, date });
+  if (!record) {
+    return { modified: false, reason: "not_found" };
+  }
+
+  const antes = toReservationShape(record);
+  const nuevaFecha = cambios.new_date || antes.date;
+  const nuevaHora = cambios.new_time || antes.time;
+  const nuevasPersonas = Number(cambios.new_party_size) || antes.party_size;
+
+  const cambiaSitio =
+    nuevaFecha !== antes.date || nuevaHora !== antes.time || nuevasPersonas !== antes.party_size;
+
+  if (!cambiaSitio) {
+    return { modified: false, reason: "sin_cambios", reservation: antes };
+  }
+
+  const mesa = await findAvailableTable(ctx, nuevaFecha, nuevaHora, nuevasPersonas, record.id);
+  if (!mesa) {
+    return { modified: false, reason: "no_availability", reservation: antes };
+  }
+
+  const actualizado = await updateRecord(
+    ctx.baseId,
+    TABLE_RESERVAS,
+    record.id,
+    {
+      FechaHora: fechaHoraKey(nuevaFecha, nuevaHora),
+      Personas: nuevasPersonas,
+      Mesa: [mesa.id],
+      Turno: derivarTurno(nuevaHora),
+    },
+    { typecast: true }
+  );
+
+  return {
+    modified: true,
+    before: antes,
+    reservation: toReservationShape(actualizado),
+    table: mesa.fields.Nombre,
+  };
 }
 
 /**
@@ -314,6 +414,8 @@ module.exports = {
   cancelReservation,
   findReservation,
   findReservationRecord,
+  findUpcomingByPhone,
+  modifyReservation,
   getUpcomingReservations,
   getRecentlyCompletedVisits,
   markReservation,
