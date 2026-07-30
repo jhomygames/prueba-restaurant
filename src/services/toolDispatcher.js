@@ -8,6 +8,7 @@ const reservations = require("./reservations");
 const customerMemory = require("./customerMemory");
 const { notifyStaff } = require("./transferToHuman");
 const menuService = require("./menuService");
+const history = require("./history");
 
 // Normaliza para comparar sin acentos ni mayúsculas ("Croquetas" ~ "croquetas", "César" ~ "cesar").
 function normalize(s) {
@@ -80,20 +81,47 @@ async function dispatchTool(name, args, context = {}) {
     case "create_reservation": {
       const result = await reservations.createReservation(ctx, {
         ...args,
+        lopd: args.lopd_accepted,
         source: context.channel || "voz",
       });
       if (result.created) {
+        await history.registrar(ctx, {
+          accion: "created",
+          canal: context.channel || "voz",
+          reservaId: result.id,
+          codigo: result.code,
+          despues: {
+            FechaHora: `${args.date} ${args.time}`,
+            Personas: args.party_size,
+            ClienteNombre: args.customer_name,
+          },
+        });
         // Guarda/actualiza el cliente en Airtable para que quede en la memoria de
         // clientes habituales, sin importar el canal (voz o WhatsApp).
         await customerMemory
-          .upsertCustomer(ctx, args.customer_phone, { name: args.customer_name })
+          .upsertCustomer(ctx, args.customer_phone, {
+            name: args.customer_name,
+            lopd: args.lopd_accepted,
+          })
           .catch((err) => console.error("[toolDispatcher] error guardando cliente:", err));
       }
       return result;
     }
 
-    case "cancel_reservation":
-      return reservations.cancelReservation(ctx, args);
+    case "cancel_reservation": {
+      const result = await reservations.cancelReservation(ctx, args);
+      if (result.cancelled) {
+        await history.registrar(ctx, {
+          accion: "cancelled",
+          canal: context.channel || "voz",
+          reservaId: result.reservation?.id,
+          codigo: result.reservation?.code,
+          antes: { Estado: "confirmada" },
+          despues: { Estado: "cancelada" },
+        });
+      }
+      return result;
+    }
 
     case "get_menu_info":
       return getMenuInfo(ctx, args);

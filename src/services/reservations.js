@@ -18,12 +18,45 @@
  */
 
 const { listRecords, createRecord, updateRecord, quote } = require("./airtableClient");
+const allergens = require("./allergens");
+const phone = require("./phone");
 
 const TABLE_MESAS = "Mesas";
 const TABLE_RESERVAS = "Reservas";
 
+// A partir de esta hora, la reserva es de cena. Coincide con el corte real de
+// los datos históricos (comidas 13:00-14:00, cenas 20:00-22:30).
+const HORA_CORTE_CENA = 17;
+
 function fechaHoraKey(date, time) {
   return `${date} ${time}`;
+}
+
+/**
+ * Turno de servicio ("comida" | "cena") a partir de la hora.
+ *
+ * Es un concepto de negocio que el equipo usa para organizar la sala, y venía
+ * en los datos de n8n como campo propio. Aquí se DERIVA de la hora en vez de
+ * pedirlo, porque un turno que contradiga a su propia hora solo puede confundir.
+ */
+function derivarTurno(time) {
+  const hora = Number(String(time || "").split(":")[0]);
+  if (!Number.isFinite(hora)) return "";
+  return hora < HORA_CORTE_CENA ? "comida" : "cena";
+}
+
+/**
+ * Código legible de reserva, formato "RES-123456-789".
+ *
+ * Un identificador interno de Airtable ("recXXXXXXXX") no se puede dictar por
+ * teléfono. Este sí: el agente de voz lo lee al confirmar y el cliente puede
+ * usarlo luego para consultar o anular. Mismo formato que ya generaba n8n, para
+ * que los códigos que los clientes tengan apuntados sigan siendo válidos.
+ */
+function generarCodigo() {
+  const seis = String(Math.floor(Math.random() * 1e6)).padStart(6, "0");
+  const tres = String(Math.floor(Math.random() * 1e3)).padStart(3, "0");
+  return `RES-${seis}-${tres}`;
 }
 
 function toReservationShape(record) {
@@ -46,6 +79,10 @@ function toReservationShape(record) {
     // tienen: se muestran como "panel" por ser lo más probable históricamente.
     source: f.Origen || "panel",
     external_id: f.ExternalId || null,
+    code: f.CodigoReserva || null,
+    shift: f.Turno || derivarTurno(time),
+    allergens: f.Alergias || [],
+    lopd: f.LopdAcepta === true,
   };
 }
 
@@ -91,7 +128,7 @@ async function checkAvailability(ctx, { date, time, party_size }) {
  */
 async function createReservation(
   ctx,
-  { date, time, party_size, customer_name, customer_phone, notes, source, external_id }
+  { date, time, party_size, customer_name, customer_phone, notes, source, external_id, code, lopd }
 ) {
   const mesa = await findAvailableTable(ctx, date, time, party_size);
   if (!mesa) {
@@ -107,8 +144,22 @@ async function createReservation(
     Estado: "confirmada",
     Notas: notes || "",
     Origen: source || "panel",
+    Turno: derivarTurno(time),
+    CodigoReserva: code || generarCodigo(),
+    LopdAcepta: Boolean(lopd),
   };
   if (external_id) fields.ExternalId = String(external_id);
+
+  // Las alergias llegan dictadas dentro de las notas ("alergia al marisco").
+  // Se estructuran para que la carta se pueda filtrar y cocina reciba el aviso,
+  // SIN tocar la nota original, que sigue siendo la fuente de verdad.
+  const extraidos = allergens.extraer(notes);
+  if (extraidos.alergenos.length > 0) fields.Alergias = extraidos.alergenos;
+  if (extraidos.contextoAlergia && !extraidos.reconocido) {
+    console.warn(
+      `[reservations] nota de alergia no interpretada (${customer_name}): "${notes}" — queda solo como texto`
+    );
+  }
 
   // typecast por si el catálogo de Origen de esa base aún no tiene el valor.
   const record = await createRecord(ctx.baseId, TABLE_RESERVAS, fields, { typecast: true });
@@ -116,14 +167,33 @@ async function createReservation(
   return { created: true, ...toReservationShape(record), table: mesa.fields.Nombre };
 }
 
-async function cancelReservation(ctx, { reservation_id, customer_phone, date }) {
+/**
+ * Anula una reserva. Se puede identificar de tres formas, de la más precisa a
+ * la más tolerante:
+ *   reservation_id — id interno (lo usa el panel)
+ *   code           — "RES-123456-789", que es lo que el cliente tiene apuntado
+ *   customer_phone + date — último recurso cuando no recuerda el código
+ */
+async function cancelReservation(ctx, { reservation_id, code, customer_phone, date }) {
   let record;
 
   if (reservation_id) {
     record = { id: reservation_id };
+  } else if (code) {
+    const porCodigo = await listRecords(ctx.baseId, TABLE_RESERVAS, {
+      filterByFormula: `AND({CodigoReserva} = ${quote(code)}, {Estado} = 'confirmada')`,
+      maxRecords: 1,
+    });
+    record = porCodigo[0];
   } else {
+    // Mismo criterio tolerante que la ficha de cliente: el teléfono puede venir
+    // como "+34..." o sin prefijo según cómo lo transcribiera el agente.
+    const clave = phone.digitsKey(customer_phone);
+    const filtroTel = phone.esClaveFiable(customer_phone)
+      ? `RIGHT(REGEX_REPLACE({ClienteTelefono} & "", "[^0-9]", ""), 9) = ${quote(clave)}`
+      : `{ClienteTelefono} = ${quote(customer_phone)}`;
     const candidates = await listRecords(ctx.baseId, TABLE_RESERVAS, {
-      filterByFormula: `AND({ClienteTelefono} = ${quote(customer_phone)}, LEFT({FechaHora}, 10) = ${quote(date)}, {Estado} = 'confirmada')`,
+      filterByFormula: `AND(${filtroTel}, LEFT({FechaHora}, 10) = ${quote(date)}, {Estado} = 'confirmada')`,
     });
     record = candidates[0];
   }
@@ -193,4 +263,7 @@ module.exports = {
   getUpcomingReservations,
   getRecentlyCompletedVisits,
   markReservation,
+  derivarTurno,
+  generarCodigo,
+  toReservationShape,
 };

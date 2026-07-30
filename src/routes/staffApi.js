@@ -18,6 +18,7 @@ const express = require("express");
 const airtable = require("../services/airtableClient");
 const customerMemory = require("../services/customerMemory");
 const menuService = require("../services/menuService");
+const reservations = require("../services/reservations");
 const { requireAuth } = require("./auth");
 
 const router = express.Router();
@@ -95,6 +96,10 @@ function toAppReservation(rec) {
     // De donde vino: panel, voz, whatsapp o una plataforma externa.
     source: f.Origen || 'panel',
     externalId: f.ExternalId || undefined,
+    // Código que el cliente tiene apuntado y turno de servicio.
+    code: f.CodigoReserva || undefined,
+    shift: f.Turno || undefined,
+    lopdAccepted: f.LopdAcepta === true,
   };
 }
 
@@ -116,6 +121,11 @@ function toReservaFields(body) {
   if (body.seatedAt !== undefined) f.SentadaAt = body.seatedAt;
   if (body.customDurationMinutes !== undefined) f.DuracionMin = body.customDurationMinutes;
   if (body.source !== undefined) f.Origen = body.source;
+  if (body.code !== undefined) f.CodigoReserva = body.code;
+  if (body.lopdAccepted !== undefined) f.LopdAcepta = Boolean(body.lopdAccepted);
+  // El turno se deriva de la hora en vez de aceptarlo del cliente: así no puede
+  // quedar un "comida" a las 22:00 por un despiste al editar.
+  if (body.time !== undefined) f.Turno = reservations.derivarTurno(body.time);
   return f;
 }
 

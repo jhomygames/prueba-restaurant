@@ -16,7 +16,8 @@ con dos canales que comparten el mismo backend y las mismas herramientas:
 
 > **Registro de cambios**: `REGISTRO_DE_CAMBIOS.md` lleva el historial sesión por
 > sesión (qué se hizo, qué se verificó, qué falló y qué quedó pendiente).
-> **Al terminar cada sesión de trabajo hay que añadir ahí un bloque nuevo.**
+> **Al terminar cada sesión de trabajo hay que añadir ahí un bloque nuevo**,
+> con el comando `/registroupd` (ver `.claude/commands/registroupd.md`).
 
 ## Decisiones tomadas (no volver a preguntar esto)
 

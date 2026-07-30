@@ -14,14 +14,18 @@ const airtable = require("../airtableClient");
 const reservations = require("../reservations");
 const customerMemory = require("../customerMemory");
 const registry = require("../registry");
+const allergens = require("../allergens");
 const { decrypt } = require("../secretBox");
+
+const history = require("../history");
 
 const demo = require("./demo");
 const thefork = require("./thefork");
+const n8n = require("./n8n");
 
 const TABLE_RESERVAS = "Reservas";
 
-const ADAPTERS = { demo, thefork };
+const ADAPTERS = { demo, thefork, n8n };
 
 function getAdapter(nombre) {
   return ADAPTERS[String(nombre || "").toLowerCase()] || null;
@@ -37,13 +41,21 @@ function listAdapters() {
 }
 
 /**
- * Busca una reserva ya importada de esa plataforma. Es lo que hace que reenviar
- * el mismo webhook no cree duplicados.
+ * Busca una reserva ya importada. Es lo que hace que reenviar el mismo webhook
+ * no cree duplicados.
+ *
+ * Se busca SOLO por ExternalId, no por (Origen, ExternalId). Motivo: `Origen`
+ * guarda el canal real por el que habló el cliente ("voz", "whatsapp"), no el
+ * conector que trajo el dato — para el equipo de sala importa si la reserva la
+ * pidió alguien por teléfono, no que pasara por n8n de camino. Atarse a Origen
+ * haría que una reserva de voz llegada por n8n no se encontrara al reenviarla,
+ * y se duplicaría. ExternalId solo lo escriben los conectores y cada plataforma
+ * usa su propio formato de id, así que por sí solo ya identifica sin ambigüedad.
  */
 async function findByExternalId(ctx, provider, externalId) {
   const { quote } = airtable;
   const records = await airtable.listRecords(ctx.baseId, TABLE_RESERVAS, {
-    filterByFormula: `AND({Origen} = ${quote(provider)}, {ExternalId} = ${quote(externalId)})`,
+    filterByFormula: `{ExternalId} = ${quote(externalId)}`,
     maxRecords: 1,
   });
   return records[0] || null;
@@ -64,6 +76,9 @@ async function upsertExternalReservation(ctx, r) {
   }
 
   const existente = await findByExternalId(ctx, r.provider, r.externalId);
+  // Canal real del cliente si el adaptador lo sabe (n8n lo manda); si no, el
+  // nombre de la plataforma, que es lo más concreto que se puede afirmar.
+  const origen = r.channel || r.provider;
 
   // --- Cancelación ---
   if (r.status === "cancelled") {
@@ -75,23 +90,35 @@ async function upsertExternalReservation(ctx, r) {
       { Estado: "cancelada" },
       { typecast: true }
     );
+    await history.registrar(ctx, {
+      accion: "cancelled",
+      canal: origen,
+      reservaId: existente.id,
+      codigo: existente.fields.CodigoReserva || r.code || "",
+      antes: existente.fields,
+      despues: { Estado: "cancelada" },
+    });
     return { action: "cancelled", id: existente.id };
   }
 
   // --- Ya la teníamos: actualizar los datos que puedan haber cambiado ---
   if (existente) {
-    await airtable.updateRecord(
-      ctx.baseId,
-      TABLE_RESERVAS,
-      existente.id,
-      {
-        FechaHora: `${r.date} ${r.time}`,
-        Personas: r.pax,
-        ClienteNombre: r.customerName,
-        Notas: r.notes || "",
-      },
-      { typecast: true }
-    );
+    const nuevos = {
+      FechaHora: `${r.date} ${r.time}`,
+      Personas: r.pax,
+      ClienteNombre: r.customerName,
+      Notas: r.notes || "",
+      Turno: r.shift || reservations.derivarTurno(r.time),
+    };
+    await airtable.updateRecord(ctx.baseId, TABLE_RESERVAS, existente.id, nuevos, { typecast: true });
+    await history.registrar(ctx, {
+      accion: "modified",
+      canal: origen,
+      reservaId: existente.id,
+      codigo: existente.fields.CodigoReserva || r.code || "",
+      antes: existente.fields,
+      despues: nuevos,
+    });
     return { action: "updated", id: existente.id };
   }
 
@@ -103,15 +130,21 @@ async function upsertExternalReservation(ctx, r) {
     customer_name: r.customerName,
     customer_phone: r.customerPhone || "",
     notes: r.notes || "",
-    source: r.provider,
+    source: origen,
     external_id: r.externalId,
+    code: r.code || "",
+    lopd: r.lopd,
   });
 
   let id = creada.id;
 
   // Sin mesa libre NO se rechaza: la plataforma ya se la vendió al cliente.
   // Entra sin mesa y el staff la coloca a mano (el panel la muestra igual).
+  let codigo = creada.code;
+
   if (!creada.created) {
+    codigo = r.code || reservations.generarCodigo();
+    const extraidos = allergens.extraer(r.notes);
     const record = await airtable.createRecord(
       ctx.baseId,
       TABLE_RESERVAS,
@@ -122,8 +155,12 @@ async function upsertExternalReservation(ctx, r) {
         ClienteTelefono: r.customerPhone || "",
         Estado: "confirmada",
         Notas: r.notes || "",
-        Origen: r.provider,
+        Origen: origen,
         ExternalId: String(r.externalId),
+        Turno: r.shift || reservations.derivarTurno(r.time),
+        CodigoReserva: codigo,
+        LopdAcepta: Boolean(r.lopd),
+        ...(extraidos.alergenos.length > 0 ? { Alergias: extraidos.alergenos } : {}),
       },
       { typecast: true }
     );
@@ -136,11 +173,19 @@ async function upsertExternalReservation(ctx, r) {
   // Memoria de clientes, igual que en voz y WhatsApp.
   if (r.customerPhone) {
     await customerMemory
-      .upsertCustomer(ctx, r.customerPhone, { name: r.customerName })
+      .upsertCustomer(ctx, r.customerPhone, { name: r.customerName, lopd: r.lopd })
       .catch((err) => console.error("[connectors] error guardando cliente:", err.message));
   }
 
-  return { action: "created", id, sinMesa: !creada.created };
+  await history.registrar(ctx, {
+    accion: "created",
+    canal: origen,
+    reservaId: id,
+    codigo,
+    despues: { FechaHora: `${r.date} ${r.time}`, Personas: r.pax, ClienteNombre: r.customerName },
+  });
+
+  return { action: "created", id, code: codigo, sinMesa: !creada.created };
 }
 
 /** Credenciales descifradas del conector de un restaurante. */
