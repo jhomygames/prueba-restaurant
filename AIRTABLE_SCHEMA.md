@@ -80,8 +80,18 @@ una versión enmascarada.
 | Mesa | Link to another record → `Mesas` | mesa asignada |
 | Estado | Single select | confirmada / cancelada / completada |
 | Notas | Long text | alergias, ocasión especial, etc. |
-| Origen | Single select | de dónde vino: `panel`, `voz`, `whatsapp`, `thefork`, `demo` |
+| Alergias | Multiple select | catálogo de 14 alérgenos; se rellena solo a partir de las notas (ver `src/services/allergens.js`) |
+| Origen | Single select | CANAL REAL por el que llegó: `panel`, `voz`, `whatsapp`, `thefork`, `demo`, `n8n` |
 | ExternalId | Single line text | su id en la plataforma externa; es la clave que evita duplicar una reserva al reprocesar su webhook |
+| CodigoReserva | Single line text | `RES-123456-789`, legible por teléfono; es lo que el cliente apunta y cita para cambiar o anular |
+| Turno | Single select | `comida` / `cena`, derivado de la hora (corte a las 17:00) |
+| LopdAcepta | Checkbox | el cliente consintió el tratamiento de sus datos (obligatorio en España) |
+
+**Por qué `Origen` guarda el canal y no el conector**: a la sala le importa si
+la reserva la pidió alguien por teléfono o por WhatsApp, no si pasó por n8n de
+camino. Por eso la deduplicación se hace SOLO por `ExternalId` (ver
+`src/services/connectors/index.js`): atarla a `Origen` haría que una reserva de
+voz llegada por un conector no se encontrara al reenviarla, y se duplicaría.
 
 **Por qué `FechaHora` es texto y no un campo Date real**: Airtable normaliza
 los campos Date a UTC según la config de zona horaria de la base, lo que
@@ -101,6 +111,32 @@ adelante si se necesita reportes/vistas de calendario nativas de Airtable.
 | Preferencias | Long text | notas libres |
 | UltimaVisita | Single line text o Date | ISO 8601 |
 | NumVisitas | Number | |
+| IdiomaPreferido | Single select | `es`, `en`, `fr`… el agente de voz puede saludar en el idioma de la última visita |
+| LopdAcepta | Checkbox | consentimiento de tratamiento de datos |
+
+**La búsqueda por `Telefono` es tolerante a formatos**: se compara por los 9
+últimos dígitos, así que `624114533` y `+34624114533` se reconocen como la
+misma persona. Sin eso, cada forma de transcribir el número creaba una ficha
+distinta y partía en dos las visitas y los alérgenos conocidos del cliente
+(ver `src/services/phone.js`).
+
+## Tabla `Historial`
+
+Traza de cambios de las reservas: quién cambió qué y cuándo. Sirve para
+resolver reclamaciones ("yo reservé para seis, no para tres").
+
+| Campo | Tipo | Notas |
+|---|---|---|
+| Cuando | Single line text | ISO 8601 |
+| CodigoReserva | Single line text | la reserva afectada |
+| ReservaId | Single line text | su id interno de Airtable |
+| Accion | Single select | `created` / `modified` / `cancelled` / `seated` / `completed` |
+| Canal | Single select | desde dónde se hizo el cambio |
+| Cambios | Long text | resumen legible: `personas: 6 -> 3; hora: 21:00 -> 13:30` |
+| DatosNuevos | Long text | estado resultante en JSON |
+
+Un `modified` que no cambió nada NO se registra: pasa cada vez que una
+plataforma reenvía el mismo aviso y solo taparía los cambios de verdad.
 
 ## Tabla `Carta`
 

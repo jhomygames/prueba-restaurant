@@ -89,10 +89,15 @@ const TABLAS = [
         name: "Origen",
         type: "singleSelect",
         options: {
-          choices: ["panel", "voz", "whatsapp", "thefork", "demo"].map((name) => ({ name })),
+          choices: ["panel", "voz", "whatsapp", "thefork", "demo", "n8n"].map((name) => ({ name })),
         },
       },
       { name: "ExternalId", type: "singleLineText" },
+      // Turno de servicio, código legible por teléfono y consentimiento de
+      // datos: conceptos que el flujo de voz necesita (ver AIRTABLE_SCHEMA.md).
+      { name: "Turno", type: "singleSelect", options: { choices: [{ name: "comida" }, { name: "cena" }] } },
+      { name: "CodigoReserva", type: "singleLineText" },
+      { name: "LopdAcepta", type: "checkbox", options: CHECK("greenBright") },
     ],
   },
   {
@@ -104,6 +109,37 @@ const TABLAS = [
       { name: "Preferencias", type: "multilineText" },
       { name: "UltimaVisita", type: "singleLineText" },
       { name: "NumVisitas", type: "number", options: { precision: 0 } },
+      {
+        name: "IdiomaPreferido",
+        type: "singleSelect",
+        options: { choices: ["es", "en", "fr", "de", "it", "pt", "ca"].map((name) => ({ name })) },
+      },
+      { name: "LopdAcepta", type: "checkbox", options: CHECK("greenBright") },
+    ],
+  },
+  {
+    name: "Historial",
+    description: "Traza de cambios de las reservas (quién, cuándo y qué cambió)",
+    fields: [
+      { name: "Cuando", type: "singleLineText" },
+      { name: "CodigoReserva", type: "singleLineText" },
+      { name: "ReservaId", type: "singleLineText" },
+      {
+        name: "Accion",
+        type: "singleSelect",
+        options: {
+          choices: ["created", "modified", "cancelled", "seated", "completed"].map((name) => ({ name })),
+        },
+      },
+      {
+        name: "Canal",
+        type: "singleSelect",
+        options: {
+          choices: ["panel", "voz", "whatsapp", "thefork", "demo", "n8n"].map((name) => ({ name })),
+        },
+      },
+      { name: "Cambios", type: "multilineText" },
+      { name: "DatosNuevos", type: "multilineText" },
     ],
   },
   {

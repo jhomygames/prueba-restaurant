@@ -25,7 +25,8 @@ const tools = [
   },
   {
     name: "create_reservation",
-    description: "Crea una reserva confirmada en el sistema de reservas del restaurante.",
+    description:
+      "Crea una reserva confirmada. Devuelve un código con formato RES-123456-789: DÍCTASELO al cliente al confirmar, es lo que le permitirá consultarla o anularla después.",
     parameters: {
       type: "object",
       properties: {
@@ -35,20 +36,31 @@ const tools = [
         customer_name: { type: "string", description: "Nombre del cliente" },
         customer_phone: {
           type: "string",
-          description: "Teléfono del cliente en formato internacional, ej. +58...",
+          description: "Teléfono del cliente en formato internacional, ej. +34...",
         },
-        notes: { type: "string", description: "Notas adicionales (alergias, ocasión especial, etc.)" },
+        notes: {
+          type: "string",
+          description:
+            "Notas adicionales. Recoge SIEMPRE aquí, con las palabras del cliente, cualquier alergia o intolerancia que mencione.",
+        },
+        lopd_accepted: {
+          type: "boolean",
+          description:
+            "true si el cliente ha aceptado que se guarden sus datos para gestionar la reserva. Obligatorio por la ley española de protección de datos.",
+        },
       },
       required: ["date", "time", "party_size", "customer_name", "customer_phone"],
     },
   },
   {
     name: "cancel_reservation",
-    description: "Cancela una reserva existente identificada por su ID o por teléfono + fecha.",
+    description:
+      "Cancela una reserva. Pregunta primero por su código (RES-123456-789), que es lo más fiable; si el cliente no lo tiene a mano, usa su teléfono más la fecha.",
     parameters: {
       type: "object",
       properties: {
-        reservation_id: { type: "string", description: "ID de la reserva, si se conoce" },
+        code: { type: "string", description: "Código de la reserva, ej. RES-123456-789" },
+        reservation_id: { type: "string", description: "ID interno, si se conoce" },
         customer_phone: { type: "string", description: "Teléfono del cliente" },
         date: { type: "string", description: "Fecha de la reserva en formato YYYY-MM-DD" },
       },

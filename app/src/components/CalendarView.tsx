@@ -251,6 +251,17 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         {ORIGENES[res.source].texto}
                       </span>
                     )}
+
+                    {/* Código que el cliente tiene apuntado: es por lo que
+                        pregunta cuando llama para cambiar o anular. */}
+                    {res.code && (
+                      <span
+                        className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-brand-outline/40 text-brand-muted border border-brand-outline select-all"
+                        title="Código de la reserva: el cliente lo tiene apuntado"
+                      >
+                        {res.code}
+                      </span>
+                    )}
                   </div>
 
                   {/* Notes / Allergies row */}

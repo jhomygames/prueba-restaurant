@@ -48,6 +48,12 @@ export interface Reservation {
   source?: string;
   /** Su identificador en la plataforma externa, si vino de una. */
   externalId?: string;
+  /** Código que el cliente tiene apuntado, ej. "RES-123456-789". */
+  code?: string;
+  /** Turno de servicio, derivado de la hora. */
+  shift?: 'comida' | 'cena';
+  /** El cliente aceptó el tratamiento de sus datos (LOPD). */
+  lopdAccepted?: boolean;
 }
 
 export type NotificationType = 'daily_reminder' | '15_min_before' | 'incoming_call' | 'system';

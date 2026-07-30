@@ -68,6 +68,86 @@ src/
 
 ---
 
+## Sesión 2026-07-30 · Adaptación del esquema de n8n (preparar la entrada de Vapi)
+
+Se recibieron las tres tablas que el flujo de n8n usaba en Supabase
+(`reservas`, `clientes`, `historial_reservas`) para adaptarlas y poder conectar
+Vapi contra nuestro sistema sin perder nada por el camino.
+
+### Lo que el análisis de esos datos reveló
+
+**Un cliente partido en dos.** El mismo número aparecía como `+34624114533` y
+como `624114533`, y como la ficha se busca por teléfono, cada forma creaba un
+cliente distinto. Resultado: visitas y **alérgenos conocidos divididos entre dos
+fichas**, que es justo lo que la memoria de clientes debe evitar. Ahora la
+búsqueda compara por los 9 últimos dígitos y los reconoce como la misma persona.
+
+**Alergias encerradas en texto libre.** "Alergia al marisco y al pescado" no se
+puede filtrar ni avisar a cocina. Se traducen a los 14 alérgenos oficiales, con
+dos reglas: la nota original nunca se sustituye, y ante la duda se marca de más
+("marisco" coloquial → crustáceos *y* moluscos). Lo que no se entiende se
+reporta en vez de darse por leído — en los datos había un "Alergia al boco" que
+ahora sale como aviso a revisar.
+
+**Números imposibles.** `6871134476` (un dígito de más) y `542389123` (empieza
+por 5, que no existe en España). Se marcan para revisión **sin corregirlos a
+ciegas**: un número mal "arreglado" es peor que uno sin tocar.
+
+### Campos que faltaban y se añadieron
+
+| Concepto | Por qué importa |
+|---|---|
+| `CodigoReserva` | `RES-123456-789`: un id interno de Airtable no se puede dictar por teléfono; este sí |
+| `Turno` | comida/cena, derivado de la hora (no se pide, para que no contradiga a su propia hora) |
+| `LopdAcepta` | consentimiento de datos, obligatorio en España |
+| `IdiomaPreferido` | el agente puede saludar en el idioma de la última visita |
+| Tabla `Historial` | traza de cambios para resolver reclamaciones |
+
+El historial guarda además un **resumen legible** (`personas: 6 -> 3`), no solo
+dos JSON que haya que comparar a ojo como hacía n8n.
+
+### Conector n8n
+
+Acepta el objeto tal cual se insertaba en Supabase, con sus nombres de columna,
+para que en n8n solo haya que cambiar un nodo. Tolera nombres alternativos
+porque fallar por una "s" de más obligaría a depurar dentro de n8n a ciegas.
+
+**Decisión de diseño**: `Origen` guarda el canal real (`voz`, `whatsapp`), no
+"n8n" — a la sala le importa si el cliente llamó o escribió, no la fontanería.
+Eso obligó a cambiar la deduplicación, que antes casaba `(Origen, ExternalId)`
+y ahora usa solo `ExternalId`; de lo contrario una reserva de voz llegada por
+n8n no se encontraría al reenviarla y se duplicaría.
+
+### Datos históricos importados
+
+Las 17 reservas, 8 clientes y 24 entradas de historial están ya en El Sazón
+Venezolano, con teléfonos normalizados, alérgenos estructurados y mesa asignada
+a las que siguen en pie. El script es idempotente.
+
+**Dos fallos propios corregidos durante la verificación:**
+- La fusión de fichas duplicadas elegía "el nombre más largo" y se quedaba con
+  *"Prueba Fixed Mode"* en vez de *"Antony Bracamonte"*. Ahora gana la ficha más
+  reciente, que es la última vez que esa persona dijo cómo se llama.
+- Clientes e historial se duplicaban al reejecutar. Las fichas sin teléfono ya
+  no se importan (no se pueden buscar nunca, solo serían basura) y el historial
+  se deduplica por instante + reserva + acción.
+
+### Guion de voz actualizado
+
+María ahora pide el consentimiento de datos, dicta el código de reserva al
+confirmar y lo pide primero al cancelar.
+
+### Verificado
+
+Los 10 bloques del circuito completo contra el servidor: datos importados
+visibles en el panel, alta desde el formato exacto de Supabase, teléfono en otro
+formato reconocido como el mismo cliente, reenvío sin duplicar, cancelación,
+secreto incorrecto rechazado y traza sin ruido. Comprobado también en pantalla.
+
+**Pendiente**: la conexión de Vapi, que aporta el usuario.
+
+---
+
 ## Sesión 2026-07-27 (noche) · Despliegue de las integraciones
 
 La rama `dev/integraciones-terceros` se fusionó en `main` y se desplegó. Antes
