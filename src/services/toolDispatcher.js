@@ -123,6 +123,11 @@ async function dispatchTool(name, args, context = {}) {
       return result;
     }
 
+    // Consulta sin efectos: la usa el cliente que quiere confirmar su reserva y
+    // también el flujo de alta, para detectar que ya tiene una ese mismo turno.
+    case "find_reservation":
+      return reservations.findReservation(ctx, args);
+
     case "get_menu_info":
       return getMenuInfo(ctx, args);
 

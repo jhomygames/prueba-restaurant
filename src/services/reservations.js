@@ -17,7 +17,7 @@
  * distintas zonas horarias, migrar a timestamps reales con zona explícita.
  */
 
-const { listRecords, createRecord, updateRecord, quote } = require("./airtableClient");
+const { listRecords, getRecord, createRecord, updateRecord, quote } = require("./airtableClient");
 const allergens = require("./allergens");
 const phone = require("./phone");
 
@@ -130,6 +130,28 @@ async function createReservation(
   ctx,
   { date, time, party_size, customer_name, customer_phone, notes, source, external_id, code, lopd }
 ) {
+  // Un cliente que llama dos veces no debe acabar con dos reservas. Se comprueba
+  // por teléfono + día + TURNO, no solo por día: reservar comida y cena el mismo
+  // día es legítimo y bloquearlo sería peor que el problema que resuelve.
+  //
+  // Las reservas de plataformas externas se saltan esta comprobación: ya vienen
+  // deduplicadas por su propio id, y ahí un segundo apunte del mismo cliente
+  // suele ser una reserva real que la plataforma ya vendió.
+  if (!external_id && customer_phone) {
+    const duplicada = await findReservationRecord(ctx, {
+      customer_phone,
+      date,
+      shift: derivarTurno(time),
+    });
+    if (duplicada) {
+      return {
+        created: false,
+        reason: "duplicate",
+        existing: toReservationShape(duplicada),
+      };
+    }
+  }
+
   const mesa = await findAvailableTable(ctx, date, time, party_size);
   if (!mesa) {
     return { created: false, reason: "no_availability" };
@@ -168,35 +190,65 @@ async function createReservation(
 }
 
 /**
- * Anula una reserva. Se puede identificar de tres formas, de la más precisa a
- * la más tolerante:
+ * Localiza una reserva confirmada. Se puede identificar de varias formas, de la
+ * más precisa a la más tolerante:
  *   reservation_id — id interno (lo usa el panel)
  *   code           — "RES-123456-789", que es lo que el cliente tiene apuntado
  *   customer_phone + date — último recurso cuando no recuerda el código
+ *
+ * `shift` acota la búsqueda por teléfono a un turno concreto, que es lo que
+ * permite distinguir una comida de una cena del mismo cliente y el mismo día.
+ *
+ * Devuelve el registro crudo de Airtable (o null), porque quien llama a veces
+ * necesita los campos originales y no la forma ya traducida.
  */
-async function cancelReservation(ctx, { reservation_id, code, customer_phone, date }) {
-  let record;
-
+async function findReservationRecord(ctx, { reservation_id, code, customer_phone, date, shift }) {
   if (reservation_id) {
-    record = { id: reservation_id };
-  } else if (code) {
+    return getRecord(ctx.baseId, TABLE_RESERVAS, reservation_id).catch(() => null);
+  }
+
+  if (code) {
     const porCodigo = await listRecords(ctx.baseId, TABLE_RESERVAS, {
       filterByFormula: `AND({CodigoReserva} = ${quote(code)}, {Estado} = 'confirmada')`,
       maxRecords: 1,
     });
-    record = porCodigo[0];
-  } else {
-    // Mismo criterio tolerante que la ficha de cliente: el teléfono puede venir
-    // como "+34..." o sin prefijo según cómo lo transcribiera el agente.
-    const clave = phone.digitsKey(customer_phone);
-    const filtroTel = phone.esClaveFiable(customer_phone)
-      ? `RIGHT(REGEX_REPLACE({ClienteTelefono} & "", "[^0-9]", ""), 9) = ${quote(clave)}`
-      : `{ClienteTelefono} = ${quote(customer_phone)}`;
-    const candidates = await listRecords(ctx.baseId, TABLE_RESERVAS, {
-      filterByFormula: `AND(${filtroTel}, LEFT({FechaHora}, 10) = ${quote(date)}, {Estado} = 'confirmada')`,
-    });
-    record = candidates[0];
+    return porCodigo[0] || null;
   }
+
+  if (!customer_phone || !date) return null;
+
+  // Mismo criterio tolerante que la ficha de cliente: el teléfono puede venir
+  // como "+34..." o sin prefijo según cómo lo transcribiera el agente.
+  const clave = phone.digitsKey(customer_phone);
+  const filtroTel = phone.esClaveFiable(customer_phone)
+    ? `RIGHT(REGEX_REPLACE({ClienteTelefono} & "", "[^0-9]", ""), 9) = ${quote(clave)}`
+    : `{ClienteTelefono} = ${quote(customer_phone)}`;
+  const candidatas = await listRecords(ctx.baseId, TABLE_RESERVAS, {
+    filterByFormula: `AND(${filtroTel}, LEFT({FechaHora}, 10) = ${quote(date)}, {Estado} = 'confirmada')`,
+  });
+
+  if (shift) {
+    const delTurno = candidatas.find((r) => {
+      const hora = (r.fields.FechaHora || " ").split(" ")[1] || "";
+      return (r.fields.Turno || derivarTurno(hora)) === shift;
+    });
+    return delTurno || null;
+  }
+  return candidatas[0] || null;
+}
+
+/** Igual que findReservationRecord, pero devuelve la forma pública. */
+async function findReservation(ctx, criterios) {
+  const record = await findReservationRecord(ctx, criterios);
+  if (!record) return { found: false, reason: "not_found" };
+  return { found: true, reservation: toReservationShape(record) };
+}
+
+/**
+ * Anula una reserva, identificada con los mismos criterios que findReservation.
+ */
+async function cancelReservation(ctx, { reservation_id, code, customer_phone, date }) {
+  const record = await findReservationRecord(ctx, { reservation_id, code, customer_phone, date });
 
   if (!record) {
     return { cancelled: false, reason: "not_found" };
@@ -260,6 +312,8 @@ module.exports = {
   checkAvailability,
   createReservation,
   cancelReservation,
+  findReservation,
+  findReservationRecord,
   getUpcomingReservations,
   getRecentlyCompletedVisits,
   markReservation,

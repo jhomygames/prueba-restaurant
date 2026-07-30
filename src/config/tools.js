@@ -68,6 +68,20 @@ const tools = [
     },
   },
   {
+    name: "find_reservation",
+    description:
+      "Consulta una reserva existente SIN modificarla, para confirmarle al cliente su día, hora y número de personas. Búscala por código (lo más fiable) o, si no lo recuerda, por teléfono más fecha.",
+    parameters: {
+      type: "object",
+      properties: {
+        code: { type: "string", description: "Código de la reserva, ej. RES-123456-789" },
+        customer_phone: { type: "string", description: "Teléfono del cliente" },
+        date: { type: "string", description: "Fecha de la reserva en formato YYYY-MM-DD" },
+      },
+      required: [],
+    },
+  },
+  {
     name: "get_menu_info",
     description:
       "Devuelve información de la carta: platos con precio, descripción y los 14 alérgenos obligatorios de cada plato. Filtra por categoría, por nombre de plato, o por alérgeno a evitar. Usa siempre el filtro más específico posible (dish_name si preguntan por un plato concreto) en vez de pedir toda la carta.",
