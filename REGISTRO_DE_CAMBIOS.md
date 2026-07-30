@@ -80,6 +80,98 @@ scripts/
 
 ---
 
+## Sesión 2026-07-31 · Enlace de los workflows de n8n con la app
+
+Los 8 workflows de n8n que atendían las llamadas pasan a guardar en Airtable en
+vez de en Supabase y Google Sheets. Se trabajó sobre copias (carpeta «prueba
+Jhomar»); los originales siguen intactos y activos.
+
+### La arquitectura no era la que esperábamos
+
+No era solo Supabase: los datos estaban repartidos entre **Supabase** (reservas
+y clientes), **Google Sheets** (los turnos y un espejo de las reservas) y n8n
+para los WhatsApp. La hoja pertenece a otro restaurante, «El Rincón».
+
+Y los workflows tenían lógica que la app **no** tenía:
+
+| n8n hacía | La app |
+|---|---|
+| Resuelve «mañana», «el viernes», «próximo sábado» en código | Se lo pedía al modelo en el prompt |
+| Dice la fecha en voz alta («domingo, veinte de septiembre…») | No lo hacía |
+| Valida el horario de apertura | **No: habría reservado a las 5 de la mañana** |
+| Grupos de más de 10 → pasa al equipo | No |
+| Evita que el mismo cliente reserve dos veces el mismo día | No |
+| Modificación atómica de una reserva | Decía «anula y vuelve a crear» |
+
+Por eso los workflows **no se sustituyeron, se enlazaron**: n8n conserva esa
+lógica y la app pasa a ser la base de datos. Lo que faltaba se implementó en la
+app, donde vale para todos los canales y no solo para el de voz.
+
+### Lo que se añadió a la app
+
+- **Anti-duplicados** al crear una reserva. Se comprueba por teléfono + día +
+  **turno**, no solo por día como hacía n8n: reservar comida y cena el mismo día
+  es legítimo y bloquearlo sería peor que el problema que resuelve. Las reservas
+  de plataformas externas se saltan la comprobación porque ya vienen
+  deduplicadas por su propio id.
+- **`modify_reservation`**, como modificación real y no como «anular y crear de
+  nuevo»: si el alta fallara después de la baja, el cliente se quedaría sin
+  reserva sin saberlo. La original solo se toca cuando ya hay mesa para los
+  datos nuevos.
+- **`find_reservation`**, que busca por código, por teléfono+fecha, o solo por
+  teléfono (devolviendo todas las reservas futuras del cliente).
+- `findAvailableTable` admite excluir una reserva del cálculo de ocupación: sin
+  eso, cambiar solo el número de personas sin mover la hora fallaría siempre por
+  chocar la reserva consigo misma.
+- Comparación en tiempo constante del secreto compartido de Vapi/n8n.
+
+### Dos fallos que ya venían de antes
+
+- **Todas las ramas de error de `save_reservation` estaban rotas.** El nodo de
+  respuesta leía siempre de `resultado_ok`, que solo se ejecuta cuando todo va
+  bien. Faltan datos, fuera de horario, sin disponibilidad… ninguna llegaba a
+  decirle nada al cliente: el agente recibía un fallo técnico. Corregido en las
+  copias; **los originales siguen con ese fallo**.
+- **El teléfono se enviaba a Twilio sin prefijo internacional**, lo que impide
+  entregar el WhatsApp. Corregido en las tres notificaciones.
+
+### Seguridad
+
+Los workflows llevan la **clave `service_role` de Supabase escrita a mano** en
+las cabeceras de varios nodos (en dos formatos distintos, uno por workflow).
+Esa clave salta todas las reglas de seguridad de la base y queda en el historial
+de versiones y en los logs. **Está pendiente de rotar por parte del usuario.**
+
+### Verificado
+
+Cadena completa contra los webhooks reales y el servidor desplegado: reservar →
+buscar por teléfono sin dar fecha → cambiar a 5 personas (la app reasignó de
+Terraza 3 a Mesa 6, más grande) → mover de fecha y hora (turno recalculado a
+comida) → anular → comprobar que ya no aparece. Más las ramas de error:
+duplicado, datos incompletos, fuera de horario y grupo grande.
+
+En Airtable quedó todo: código, mesa, turno, origen y **las alergias extraídas
+del texto libre** («Alergia al gluten» → etiqueta `Gluten`).
+
+Sin regresiones: las pruebas de voz, duplicados, conector n8n y conectores
+demo/TheFork siguen pasando.
+
+**Un fallo propio, anotado por si vuelve**: dos pruebas dieron error por buscar
+campos con el nombre equivocado (`codigo`/`turno` en vez de `code`/`shift`, y
+`Codigo` en vez de `CodigoReserva`). El código estaba bien; el test, no.
+También hubo un test cuya limpieza borraba con una clave vacía y fallaba en
+silencio, dejando residuos que hacían fallar la ejecución siguiente.
+
+### Estado
+
+Commit `043925d` en `main`, desplegado y verificado. Los 8 workflows copiados
+apuntan a la app y están publicados.
+
+**Pendiente**: apuntar el asistente de Vapi a los webhooks de las copias (o a
+nuestra URL directamente), y rotar la clave de Supabase.
+
+---
+
 ## Sesión 2026-07-30 (tarde) · Conexión del agente de voz y despliegue
 
 Se registró el agente de Vapi que hoy funciona con n8n y se desplegó todo el
