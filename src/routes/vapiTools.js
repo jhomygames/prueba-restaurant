@@ -16,6 +16,7 @@
 const express = require("express");
 const { dispatchTool } = require("../services/toolDispatcher");
 const registry = require("../services/registry");
+const { safeCompare } = require("../services/secretBox");
 
 const router = express.Router();
 
@@ -40,10 +41,17 @@ async function resolveRestaurant(body) {
   return found;
 }
 
+/**
+ * Comprueba el secreto compartido que envían Vapi (Server URL Secret) y n8n.
+ *
+ * Sigue siendo opcional a propósito: si no hay VAPI_WEBHOOK_SECRET configurado
+ * se acepta la llamada, para no tumbar un agente que ya está atendiendo. En
+ * cuanto la variable existe, pasa a ser obligatoria.
+ */
 function verifyVapiSecret(req) {
   const expected = process.env.VAPI_WEBHOOK_SECRET;
-  if (!expected) return true; // TODO: exigir esto antes de ir a producción (punto 9)
-  return req.headers["x-vapi-secret"] === expected;
+  if (!expected) return true;
+  return safeCompare(req.headers["x-vapi-secret"], expected);
 }
 
 router.post("/vapi/tools", async (req, res) => {
