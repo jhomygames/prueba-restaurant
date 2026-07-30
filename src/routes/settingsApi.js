@@ -211,6 +211,22 @@ router.post(
     if (!creds) return res.status(400).json({ error: "sin_api_key_vapi" });
     if (!req.restaurant.vapi.assistantId) return res.status(400).json({ error: "sin_assistant" });
 
+    // Se comprueba en dos pasos para poder decir QUÉ falla. Preguntar solo por
+    // el assistant confunde dos cosas muy distintas: una clave que no sirve, y
+    // una clave correcta de otra cuenta de Vapi donde ese assistant no existe.
+    let assistants;
+    try {
+      assistants = await vapiAdmin.listAssistants(creds.key);
+    } catch (err) {
+      return res.status(400).json({
+        ok: false,
+        fallo: "api_key",
+        error: err.message,
+        pista:
+          "Vapi entrega dos claves con el mismo aspecto. Aquí hace falta la PRIVADA (Vapi → API Keys).",
+      });
+    }
+
     try {
       const a = await vapiAdmin.getAssistant(creds.key, req.restaurant.vapi.assistantId);
       res.json({
@@ -219,9 +235,18 @@ router.post(
         modelo: a.model?.model,
         voz: a.voice?.voiceId,
         fuenteCredenciales: creds.source,
+        assistantsEnLaCuenta: assistants.length,
       });
     } catch (err) {
-      res.status(400).json({ ok: false, error: err.message });
+      // El listado funcionó, así que la clave vale: el problema es el id del
+      // assistant, o que pertenece a otra cuenta.
+      res.status(400).json({
+        ok: false,
+        fallo: "assistant",
+        error: err.message,
+        pista: `La clave es correcta y ve ${assistants.length} assistant(s) en esa cuenta, pero ninguno con el id configurado.`,
+        assistantsDisponibles: assistants.map((a) => ({ id: a.id, nombre: a.name })),
+      });
     }
   })
 );

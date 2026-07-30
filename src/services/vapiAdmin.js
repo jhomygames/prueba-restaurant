@@ -102,6 +102,16 @@ async function getAssistant(apiKey, assistantId) {
 }
 
 /**
+ * Lista los assistants de la cuenta. Sirve para comprobar la clave POR SEPARADO
+ * del assistant: si esto responde pero getAssistant falla, la clave es correcta
+ * y lo que ocurre es que ese assistant pertenece a otra cuenta de Vapi.
+ */
+async function listAssistants(apiKey) {
+  const res = await vapiFetch(apiKey, "/assistant?limit=100");
+  return Array.isArray(res) ? res : res?.results || [];
+}
+
+/**
  * Intenta obtener un número gratuito de Vapi y ligarlo al assistant.
  * Devuelve null si la cuenta no lo permite (plan/límite): el llamador debe
  * tratarlo como "assistant creado, número pendiente".
@@ -122,6 +132,7 @@ module.exports = {
   createAssistant,
   updateAssistant,
   getAssistant,
+  listAssistants,
   provisionPhoneNumber,
   assistantConfig,
 };
