@@ -44,26 +44,38 @@ src/
     airtableClient.js          cliente REST de Airtable (baseId obligatorio) + quote()
     registry.js                resuelve qué restaurante es cada petición
     secretBox.js               cifrado AES-256-GCM y comparación segura
-    reservations.js            disponibilidad, alta y cancelación de reservas
+    reservations.js            disponibilidad, alta y cancelación; turno y código
     customerMemory.js          ficha de clientes habituales
     menuService.js             carta con caché por restaurante
     toolDispatcher.js          ejecuta las herramientas del agente
     transferToHuman.js         avisa al encargado por WhatsApp
     vapiAdmin.js               crea y actualiza el agente de voz en Vapi
+    phone.js                   normaliza teléfonos y detecta el mismo número
+    allergens.js               saca alérgenos estructurados del texto libre
+    history.js                 traza de cambios de las reservas
     connectors/                plataformas de reservas externas
       index.js                 pipeline común (dedupe, asignación de mesa…)
       demo.js                  plataforma simulada, para pruebas
       thefork.js               adaptador de TheFork
+      n8n.js                   acepta el formato de una tabla de Supabase
   config/
     tools.js                   las 6 herramientas del agente
     voicePrompt.js             instrucciones de María (compartidas con Vapi)
     menu.json                  carta original; hoy es semilla y respaldo
+
+scripts/
+  provision-restaurant.js      alta completa de un restaurante nuevo
+  add-integration-fields.js    campos de conector (retroactivo)
+  add-n8n-fields.js            turno, código, LOPD e Historial (retroactivo)
+  import-n8n-csv.js            trae los datos históricos de Supabase
+  test-thefork-parser.js       pruebas sin red ni credenciales
 ```
 
 **Ramas**
 
 - `main` — versión estable, la que Railway despliega.
-- `dev/integraciones-terceros` — trabajo en curso sobre plataformas externas.
+- `dev/integracion-n8n-vapi` — trabajo en curso: adaptación de n8n y entrada de Vapi.
+- `dev/integraciones-terceros` — ya fusionada en `main`.
 - Etiqueta `stable-2026-07-27-multitenant` — punto de retorno seguro.
 
 ---
@@ -144,7 +156,18 @@ visibles en el panel, alta desde el formato exacto de Supabase, teléfono en otr
 formato reconocido como el mismo cliente, reenvío sin duplicar, cancelación,
 secreto incorrecto rechazado y traza sin ruido. Comprobado también en pantalla.
 
-**Pendiente**: la conexión de Vapi, que aporta el usuario.
+Sin regresiones: las 26 pruebas de TheFork y el circuito del conector demo
+siguen pasando.
+
+### Estado
+
+Commit `13a4914` en la rama `dev/integracion-n8n-vapi`. **No desplegado**: los
+campos nuevos ya existen en las bases de Airtable (son inofensivos para el
+código en producción, que simplemente los ignora), pero el código que los usa
+espera a que Vapi esté probado.
+
+**Pendiente**: el Assistant ID y el Phone Number ID de Vapi, que aporta el
+usuario; la API key va directamente en la pestaña Configuración, nunca por chat.
 
 ---
 
