@@ -80,6 +80,62 @@ scripts/
 
 ---
 
+## Sesión 2026-07-30 (tarde) · Conexión del agente de voz y despliegue
+
+Se registró el agente de Vapi que hoy funciona con n8n y se desplegó todo el
+trabajo del esquema de n8n a producción.
+
+### El agente quedó vinculado a su restaurante
+
+El `assistantId` de Vapi se guardó en la ficha de **El Sazón Venezolano**, que
+es lo que permite al backend saber a qué restaurante pertenece cada llamada.
+Basta con ese dato: el `phoneNumberId` es solo un respaldo por si el asistente
+no viniera identificado.
+
+**Aclaración sobre lo que se recibió**: lo que llegó etiquetado como «Phone
+number ID» era en realidad el número de teléfono (+34 911 67 69 05), no el
+identificador interno de Vapi, que es un UUID. El número se guardó como
+teléfono de contacto y la vinculación se hizo por `assistantId`, así que no
+bloqueó nada.
+
+### Verificado contra producción
+
+Diez comprobaciones simulando llamadas reales de Vapi (formato
+`server-tool-calls`) **contra el servidor desplegado**, no solo en local:
+
+- El `assistantId` resuelve al restaurante correcto y devuelve su
+  disponibilidad real.
+- Un `assistantId` desconocido **no cae en otro restaurante**: responde
+  `restaurante_no_identificado` en vez de escribir donde no debe.
+- Una reserva creada por voz sale con su mesa, su turno (`cena`), su código
+  (`RES-061704-861`) y las alergias sacadas del texto libre («Alergia al
+  gluten» → `Gluten`).
+- La ficha del cliente se guarda en la base del Sazón; Gourmeats queda intacto.
+- La memoria del cliente se recupera en la llamada siguiente.
+- La carta consultada es la suya, y la cancelación por voz funciona.
+
+Sin regresiones: las pruebas de TheFork, del conector demo y del conector n8n
+siguen pasando.
+
+### Un fallo que era mío, no del código
+
+Las dos primeras comprobaciones de código y turno dieron error. No era el
+sistema: mi prueba buscaba las propiedades `codigo` y `turno`, cuando la
+respuesta las expone como `code` y `shift`. Los datos sí se estaban guardando
+correctamente en Airtable. Queda anotado porque es justo el tipo de «fallo»
+que puede llevar a tocar código que funciona.
+
+### Estado
+
+Commit `3827964` en `main`, **desplegado y verificado en producción**. Con esto
+el backend está listo para recibir llamadas de Vapi.
+
+**Pendiente para completar la integración**: apuntar el asistente de Vapi a
+nuestra URL de herramientas (lo hace el usuario desde el panel de Vapi, o
+nosotros si pega su API key en la pestaña Configuración).
+
+---
+
 ## Sesión 2026-07-30 · Adaptación del esquema de n8n (preparar la entrada de Vapi)
 
 Se recibieron las tres tablas que el flujo de n8n usaba en Supabase
