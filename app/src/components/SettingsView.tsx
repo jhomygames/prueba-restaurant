@@ -452,12 +452,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, onRestaura
         )}
 
         <Campo
-          label={settings.voz.apiKeyPropia ? `API key propia (guardada: ${settings.voz.apiKeyMasked})` : 'API key de Vapi (opcional)'}
+          label={settings.voz.apiKeyPropia ? `API key PRIVADA (guardada: ${settings.voz.apiKeyMasked})` : 'API key PRIVADA de Vapi (opcional)'}
           value={vapiKey}
           onChange={setVapiKey}
           type="password"
           placeholder={settings.voz.apiKeyPropia ? 'Escribe una nueva para reemplazarla' : 'Déjalo vacío para usar la cuenta central'}
-          hint="Si este local tiene su propia cuenta de Vapi, pégala aquí. Se guarda cifrada."
+          // Vapi da dos claves con el mismo aspecto (UUID) y solo la privada
+          // sirve aquí. Decirlo en el propio campo evita el 401 que da la
+          // pública, cuyo mensaje de error no aclara cuál es cuál.
+          hint="En Vapi → API Keys hay dos claves: pega la PRIVADA (la pública da error 401). Se guarda cifrada."
         />
 
         <div className="flex flex-wrap gap-2">
