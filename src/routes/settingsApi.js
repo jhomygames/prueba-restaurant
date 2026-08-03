@@ -146,11 +146,97 @@ router.put(
 router.put(
   "/api/settings/vapi",
   handle(async (req, res) => {
-    const { apiKey } = req.body || {};
-    // null/"" borra la key propia y vuelve a usar la central del entorno.
-    const value = apiKey ? encrypt(String(apiKey).trim()) : "";
-    const updated = await registry.updateRestaurant(req.restaurant.id, { VapiApiKeyEnc: value });
+    const { apiKey, assistantId } = req.body || {};
+    const cambios = {};
+
+    if (apiKey !== undefined) {
+      // null/"" borra la key propia y vuelve a usar la central del entorno.
+      cambios.VapiApiKeyEnc = apiKey ? encrypt(String(apiKey).trim()) : "";
+    }
+
+    // Cada local puede tener su agente en SU PROPIA cuenta de Vapi, así que hay
+    // que poder apuntar a uno ya existente y no solo crear uno nuevo. Se
+    // comprueba que pertenezca de verdad a esa cuenta: guardar un id de otra
+    // cuenta deja el local "configurado" pero sin agente que responda.
+    if (assistantId !== undefined) {
+      const id = String(assistantId || "").trim();
+      if (id) {
+        const claveNueva = apiKey ? String(apiKey).trim() : null;
+        const creds = claveNueva
+          ? { key: claveNueva }
+          : registry.vapiApiKey(req.restaurant);
+        if (!creds) return res.status(400).json({ error: "sin_api_key_vapi" });
+        try {
+          await vapiAdmin.getAssistant(creds.key, id);
+        } catch (err) {
+          return res.status(400).json({
+            error: "assistant_no_encontrado",
+            detalle: err.message,
+            pista: "Ese asistente no existe en la cuenta de Vapi de esta clave.",
+          });
+        }
+      }
+      cambios.VapiAssistantId = id;
+    }
+
+    if (Object.keys(cambios).length === 0) {
+      return res.status(400).json({ error: "nada_que_guardar" });
+    }
+
+    const updated = await registry.updateRestaurant(req.restaurant.id, cambios);
     res.json(toPublicSettings(updated, req));
+  })
+);
+
+/**
+ * Prueba una clave SIN guardarla, y dice qué falla exactamente.
+ *
+ * Existe porque el mensaje de error de Vapi ("puede que estés usando la privada
+ * en vez de la pública, o al revés") no aclara cuál de las dos toca, y guardar
+ * una clave para descubrir que no vale obliga a pisar la anterior en cada
+ * intento. Aquí se prueba primero y se guarda después.
+ *
+ * Nunca devuelve la clave: solo su forma (longitud y si parece un UUID), que es
+ * lo que permite detectar que se ha pegado otra cosa —un id de asistente, un id
+ * de organización— sin exponer nada.
+ */
+router.post(
+  "/api/settings/vapi/probe",
+  handle(async (req, res) => {
+    const apiKey = String((req.body || {}).apiKey || "").trim();
+    if (!apiKey) return res.status(400).json({ error: "sin_api_key" });
+
+    const esUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(apiKey);
+    const forma = { longitud: apiKey.length, pareceUuid: esUuid };
+
+    try {
+      const assistants = await vapiAdmin.listAssistants(apiKey);
+      res.json({
+        ok: true,
+        forma,
+        mensaje: `Clave válida. Esta cuenta de Vapi tiene ${assistants.length} asistente(s).`,
+        assistants: assistants.map((a) => ({
+          id: a.id,
+          nombre: a.name,
+          // Marca el que ya está configurado, para ver de un vistazo si el id
+          // guardado pertenece a esta cuenta o se quedó de otra.
+          esElConfigurado: a.id === req.restaurant.vapi.assistantId,
+        })),
+        assistantConfigurado: req.restaurant.vapi.assistantId || null,
+        configuradoEstaEnLaCuenta: assistants.some(
+          (a) => a.id === req.restaurant.vapi.assistantId
+        ),
+      });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        forma,
+        error: err.message,
+        pista: esUuid
+          ? "Tiene forma de clave, pero Vapi la rechaza. Asegúrate de copiarla de dashboard.vapi.ai/org/api-keys y de que sea la PRIVADA."
+          : "Esto no parece una clave de Vapi (deberían ser 36 caracteres con guiones). ¿Puede que sea otro valor copiado por error?",
+      });
+    }
   })
 );
 

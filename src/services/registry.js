@@ -139,12 +139,31 @@ function twilioCredentials(restaurant) {
   return null;
 }
 
-/** API key efectiva de Vapi: la del local si la tiene, si no la central. */
+/**
+ * API key efectiva de Vapi.
+ *
+ * Cada restaurante tiene su PROPIA cuenta de Vapi, no un agente dentro de una
+ * cuenta compartida. Por eso, si el local tiene clave configurada, esa manda y
+ * no se cae nunca a la central: hacerlo significaría operar contra la cuenta
+ * equivocada —leer o modificar agentes de otro— sin que nadie se entere.
+ *
+ * Que la clave del local exista pero no se pueda descifrar es un fallo que hay
+ * que ver, no que disimular: normalmente significa que TENANT_SECRETS_KEY ha
+ * cambiado y el dueño tiene que volver a pegarla.
+ *
+ * La central solo se usa cuando el local no ha configurado ninguna, que es el
+ * caso del sandbox y de los locales aún sin cuenta propia.
+ */
 function vapiApiKey(restaurant) {
   const enc = restaurant && restaurant.vapi && restaurant.vapi.apiKeyEnc;
   if (enc) {
     const key = decrypt(enc);
     if (key) return { key, source: "tenant" };
+    console.error(
+      `[registry] ${restaurant.slug} tiene clave de Vapi guardada pero no se puede descifrar; ` +
+        `NO se usa la central para no operar contra otra cuenta.`
+    );
+    return null;
   }
   if (process.env.VAPI_PRIVATE_API_KEY) {
     return { key: process.env.VAPI_PRIVATE_API_KEY, source: "central" };
