@@ -80,6 +80,77 @@ scripts/
 
 ---
 
+## Sesión 2026-08-03 · Una cuenta de Vapi por restaurante
+
+El objetivo se concretó: cada restaurante tendrá **su propia cuenta de Vapi**
+con su propio agente, no un agente dentro de una cuenta compartida. La
+arquitectura ya lo soportaba (clave y agente por local, cifrados y separados),
+pero faltaban piezas para poder usarla de verdad.
+
+### Lo que faltaba y se añadió
+
+- **Probar una clave sin guardarla.** Antes había que guardarla para saber si
+  valía, pisando la anterior en cada intento. Ahora el panel la comprueba antes
+  y, si es válida, **lista los agentes de esa cuenta** con un botón para
+  vincular el correcto.
+- **Poder fijar el `assistantId`.** Solo se establecía al crear un agente nuevo,
+  así que un local que traía su cuenta con su agente ya hecho no tenía forma de
+  apuntarlo. Ahora se puede, y **se valida contra la cuenta de la clave**:
+  guardar un id de otra cuenta dejaría el local «configurado» pero mudo.
+- **El respaldo a la clave central deja de ser silencioso.** Si la clave del
+  local existía pero no se podía descifrar, se caía a la central — es decir,
+  operaba contra otra cuenta de Vapi sin avisar. En un modelo de cuentas
+  separadas eso es inaceptable: ahora falla en voz alta.
+
+### El diagnóstico, que costó llegar
+
+Una clave daba 401 y el mensaje de Vapi no aclaraba nada. El camino:
+
+1. Primero se descartó que el fallo fuera nuestro: la clave enmascarada del
+   panel sale de **descifrar** lo guardado, así que verla bien demuestra que el
+   ciclo guardar→cifrar→descifrar funciona y que a Vapi le llega exactamente lo
+   pegado. Además se limpia de espacios al guardar.
+2. Se separó el test en dos pasos —listar agentes (prueba solo la clave) y
+   luego buscar el concreto— porque un único 401 confundía «clave inválida» con
+   «clave correcta de otra cuenta».
+3. Se añadió la **forma** de la clave (longitud, si es UUID) sin exponerla:
+   confirmó 36 caracteres y UUID válido.
+4. Se sondearon varios recursos de la API con la misma clave.
+
+**El dato decisivo**: Vapi responde `unauthorized` ante un UUID inventado, pero
+`Invalid Key. Hot tip, you may be using the private key…` ante una clave que sí
+reconoce. Son mensajes distintos, y esa diferencia dice si la clave existe pero
+es del tipo equivocado, o si no es suya en absoluto.
+
+**Error propio, anotado**: llegué a descartar esa hipótesis diciendo que el
+aviso salía también sin mandar clave. Era falso — había mirado solo el código
+401, sin leer el cuerpo de la respuesta. Leyéndolo, sí distingue.
+
+### Verificado
+
+La clave de la cuenta original **funciona**: el probador la acepta y lista sus
+agentes para elegir. Eso valida todo el mecanismo de punta a punta. La clave de
+la cuenta nueva sigue rechazada; el usuario ha pedido otra a Vapi.
+
+### Estado
+
+Commit `1a42868` en `main`, desplegado. También se aclaró en el panel que la
+clave debe ser la **privada** (el campo no lo indicaba, y las dos claves de Vapi
+son UUID indistinguibles a simple vista).
+
+**Pendiente para la próxima sesión**:
+
+- Probar la clave nueva de Vapi y vincular el agente de esa cuenta a El Sazón
+  Venezolano.
+- **Secreto de webhook por local**: hoy `VAPI_WEBHOOK_SECRET` es único y global.
+  Con cuentas de Vapi distintas, cada restaurante necesita el suyo. Es el último
+  hueco real del modelo multi-cuenta.
+- Apuntar el agente a los webhooks de n8n (o a la app directamente, lo que
+  antes exige añadir horarios de apertura a la app).
+- Rotar la clave `service_role` de Supabase, aún expuesta en los workflows.
+
+---
+
 ## Sesión 2026-07-31 · Enlace de los workflows de n8n con la app
 
 Los 8 workflows de n8n que atendían las llamadas pasan a guardar en Airtable en
