@@ -112,6 +112,31 @@ async function listAssistants(apiKey) {
 }
 
 /**
+ * Golpea varios recursos de la API con la misma clave y devuelve el código de
+ * cada uno, sin lanzar. Sirve para distinguir "esta clave no vale para nada"
+ * de "vale, pero no para este recurso concreto": lo primero apunta a que no es
+ * una clave de API; lo segundo, a un problema de permisos o de ruta.
+ *
+ * Nunca devuelve la clave ni el cuerpo completo, solo el código y un extracto.
+ */
+async function diagnosticar(apiKey) {
+  const recursos = ["/assistant", "/assistant?limit=1", "/phone-number", "/call?limit=1"];
+  return Promise.all(
+    recursos.map(async (recurso) => {
+      try {
+        const res = await fetch(`${VAPI_API}${recurso}`, {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        });
+        const texto = await res.text();
+        return { recurso, status: res.status, extracto: texto.slice(0, 120) };
+      } catch (err) {
+        return { recurso, status: 0, extracto: `no se pudo conectar: ${err.message}` };
+      }
+    })
+  );
+}
+
+/**
  * Intenta obtener un número gratuito de Vapi y ligarlo al assistant.
  * Devuelve null si la cuenta no lo permite (plan/límite): el llamador debe
  * tratarlo como "assistant creado, número pendiente".
@@ -133,6 +158,7 @@ module.exports = {
   updateAssistant,
   getAssistant,
   listAssistants,
+  diagnosticar,
   provisionPhoneNumber,
   assistantConfig,
 };

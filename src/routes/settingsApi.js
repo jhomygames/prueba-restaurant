@@ -207,11 +207,19 @@ router.post(
     if (!apiKey) return res.status(400).json({ error: "sin_api_key" });
 
     const esUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(apiKey);
-    const forma = { longitud: apiKey.length, pareceUuid: esUuid };
+    const forma = {
+      longitud: apiKey.length,
+      pareceUuid: esUuid,
+      // Un identificador copiado por error (el del asistente, el del número)
+      // también es un UUID y pasa la comprobación de forma. Compararlo con lo
+      // que ya conocemos ahorra dar vueltas.
+      esElAssistantId: apiKey === req.restaurant.vapi.assistantId,
+      esElPhoneNumberId: apiKey === req.restaurant.vapi.phoneNumberId,
+    };
 
     try {
       const assistants = await vapiAdmin.listAssistants(apiKey);
-      res.json({
+      return res.json({
         ok: true,
         forma,
         mensaje: `Clave válida. Esta cuenta de Vapi tiene ${assistants.length} asistente(s).`,
@@ -227,14 +235,36 @@ router.post(
           (a) => a.id === req.restaurant.vapi.assistantId
         ),
       });
-    } catch (err) {
-      res.status(400).json({
+    } catch (primerFallo) {
+      // Si la vía normal falla, se prueban otros recursos de la misma API antes
+      // de dar un veredicto: que fallen TODOS significa que la clave no vale
+      // para esa organización; que falle solo uno apuntaría a ese recurso.
+      const sondas = await vapiAdmin.diagnosticar(apiKey);
+      const alguno = sondas.find((s) => s.status >= 200 && s.status < 300);
+
+      let pista;
+      if (forma.esElAssistantId || forma.esElPhoneNumberId) {
+        pista =
+          "Lo pegado NO es una clave: es el identificador del " +
+          (forma.esElAssistantId ? "asistente" : "número de teléfono") +
+          " que ya teníamos configurado. Ambos son UUID y se confunden fácil.";
+      } else if (!esUuid) {
+        pista = `Lo pegado tiene ${apiKey.length} caracteres y no es un UUID. Las claves de Vapi son 36 caracteres con guiones.`;
+      } else if (alguno) {
+        pista = `La clave sirve para otros recursos (${alguno.recurso} respondió ${alguno.status}), pero no para listar asistentes.`;
+      } else {
+        pista =
+          "Tiene forma de clave, pero Vapi la rechaza en TODOS sus recursos. " +
+          "Suele significar que no es una clave de API (puede ser un id de organización o de otro elemento), " +
+          "o que pertenece a una cuenta desactivada. Compruébalo en dashboard.vapi.ai/org/api-keys.";
+      }
+
+      return res.status(400).json({
         ok: false,
         forma,
-        error: err.message,
-        pista: esUuid
-          ? "Tiene forma de clave, pero Vapi la rechaza. Asegúrate de copiarla de dashboard.vapi.ai/org/api-keys y de que sea la PRIVADA."
-          : "Esto no parece una clave de Vapi (deberían ser 36 caracteres con guiones). ¿Puede que sea otro valor copiado por error?",
+        error: primerFallo.message,
+        sondas,
+        pista,
       });
     }
   })

@@ -201,7 +201,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, onRestaura
       });
     } catch (e: any) {
       setAssistants(null);
-      setEstadoVoz({ tipo: 'error', texto: e.message });
+      // El backend manda un diagnóstico útil dentro del cuerpo del error; si
+      // viene, se muestra la pista en vez del JSON crudo, que no dice nada.
+      let texto = e.message as string;
+      const json = texto.slice(texto.indexOf('{'));
+      try {
+        const d = JSON.parse(json);
+        if (d.pista) {
+          texto = d.pista;
+          if (Array.isArray(d.sondas)) {
+            texto += ` (respuestas de Vapi: ${d.sondas.map((s: any) => `${s.recurso} → ${s.status}`).join(', ')})`;
+          }
+        }
+      } catch {
+        /* si no es JSON, se muestra el mensaje tal cual */
+      }
+      setEstadoVoz({ tipo: 'error', texto });
     } finally {
       setOcupadoVoz(null);
     }
