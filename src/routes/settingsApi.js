@@ -242,6 +242,14 @@ router.post(
       const sondas = await vapiAdmin.diagnosticar(apiKey);
       const alguno = sondas.find((s) => s.status >= 200 && s.status < 300);
 
+      // Vapi responde distinto según reconozca o no la clave, y esa diferencia
+      // es el dato más útil de todo el diagnóstico:
+      //   "unauthorized"          -> no la reconoce: no es una clave suya.
+      //   "Invalid Key. Hot tip…" -> sí la reconoce, pero es del tipo que no toca.
+      const cuerpos = sondas.map((s) => s.extracto || "").join(" ");
+      const laReconoce = /hot tip|private key|public key/i.test(cuerpos);
+      const desconocida = /unauthorized/i.test(cuerpos) && !laReconoce;
+
       let pista;
       if (forma.esElAssistantId || forma.esElPhoneNumberId) {
         pista =
@@ -252,11 +260,19 @@ router.post(
         pista = `Lo pegado tiene ${apiKey.length} caracteres y no es un UUID. Las claves de Vapi son 36 caracteres con guiones.`;
       } else if (alguno) {
         pista = `La clave sirve para otros recursos (${alguno.recurso} respondió ${alguno.status}), pero no para listar asistentes.`;
+      } else if (laReconoce) {
+        pista =
+          "Vapi SÍ reconoce esta clave, pero dice que es del tipo equivocado: es la PÚBLICA. " +
+          "La privada está en la misma página (dashboard.vapi.ai/org/api-keys) — asegúrate de copiar " +
+          "la fila etiquetada como Private, no la primera de la lista.";
+      } else if (desconocida) {
+        pista =
+          "Vapi no reconoce esta clave en absoluto (responde 'unauthorized', no un aviso de tipo de clave). " +
+          "No es una clave suya: puede ser un identificador de organización, de un agente, o de otro servicio.";
       } else {
         pista =
-          "Tiene forma de clave, pero Vapi la rechaza en TODOS sus recursos. " +
-          "Suele significar que no es una clave de API (puede ser un id de organización o de otro elemento), " +
-          "o que pertenece a una cuenta desactivada. Compruébalo en dashboard.vapi.ai/org/api-keys.";
+          "Tiene forma de clave, pero Vapi la rechaza en todos sus recursos. " +
+          "Compruébalo en dashboard.vapi.ai/org/api-keys.";
       }
 
       return res.status(400).json({
