@@ -300,6 +300,14 @@ router.post(
     // Se comprueba en dos pasos para poder decir QUÉ falla. Preguntar solo por
     // el assistant confunde dos cosas muy distintas: una clave que no sirve, y
     // una clave correcta de otra cuenta de Vapi donde ese assistant no existe.
+    // La forma de la clave guardada (nunca su valor) distingue "es la clave
+    // equivocada" de "aquí se pegó algo que ni siquiera es una clave".
+    const forma = {
+      longitud: creds.key.length,
+      pareceUuid: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(creds.key),
+      origen: creds.source,
+    };
+
     let assistants;
     try {
       assistants = await vapiAdmin.listAssistants(creds.key);
@@ -307,9 +315,11 @@ router.post(
       return res.status(400).json({
         ok: false,
         fallo: "api_key",
+        forma,
         error: err.message,
-        pista:
-          "Vapi entrega dos claves con el mismo aspecto. Aquí hace falta la PRIVADA (Vapi → API Keys).",
+        pista: forma.pareceUuid
+          ? "Tiene forma de clave, pero Vapi la rechaza. Cópiala de dashboard.vapi.ai/org/api-keys y comprueba que sea la PRIVADA."
+          : `Lo guardado tiene ${forma.longitud} caracteres y no parece una clave de Vapi (36 con guiones). Puede que se pegara otro valor.`,
       });
     }
 
