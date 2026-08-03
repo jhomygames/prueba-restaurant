@@ -191,6 +191,31 @@ export const saveSettings = (patch: Partial<Pick<RestaurantSettings, 'nombre' | 
 export const saveVapiKey = (apiKey: string | null) =>
   req<RestaurantSettings>('/api/settings/vapi', { method: 'PUT', body: JSON.stringify({ apiKey }) });
 
+/** Assistant de la cuenta de Vapi a la que pertenece una clave. */
+export type VapiAssistant = { id: string; nombre: string; esElConfigurado: boolean };
+
+/**
+ * Prueba una clave SIN guardarla y devuelve los asistentes de esa cuenta.
+ * Evita tener que pisar la clave buena para descubrir que la nueva no vale.
+ */
+export const probeVapiKey = (apiKey: string) =>
+  req<{
+    ok: boolean;
+    forma: { longitud: number; pareceUuid: boolean };
+    mensaje?: string;
+    assistants?: VapiAssistant[];
+    configuradoEstaEnLaCuenta?: boolean;
+    error?: string;
+    pista?: string;
+  }>('/api/settings/vapi/probe', { method: 'POST', body: JSON.stringify({ apiKey }) });
+
+/** Apunta el local a un assistant ya existente en su cuenta de Vapi. */
+export const setVapiAssistant = (assistantId: string, apiKey?: string) =>
+  req<RestaurantSettings>('/api/settings/vapi', {
+    method: 'PUT',
+    body: JSON.stringify(apiKey ? { assistantId, apiKey } : { assistantId }),
+  });
+
 export const provisionVapi = () =>
   req<RestaurantSettings & { aviso: string | null }>('/api/settings/vapi/provision', { method: 'POST' });
 

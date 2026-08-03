@@ -114,6 +114,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, onRestaura
   const [vapiKey, setVapiKey] = useState('');
   const [estadoVoz, setEstadoVoz] = useState<Estado>(null);
   const [ocupadoVoz, setOcupadoVoz] = useState<string | null>(null);
+  // Agentes de la cuenta de Vapi de la última clave probada. null = sin probar.
+  const [assistants, setAssistants] = useState<api.VapiAssistant[] | null>(null);
 
   // Twilio
   const [accountSid, setAccountSid] = useState('');
@@ -169,6 +171,56 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, onRestaura
       setEstadoLocal({ tipo: 'error', texto: e.message });
     } finally {
       setGuardandoLocal(false);
+    }
+  };
+
+  /**
+   * Comprueba una clave sin guardarla. Vapi entrega dos claves con la misma
+   * forma (UUID) y su error no dice cuál toca, así que probar antes de guardar
+   * evita ir pisando la anterior a ciegas en cada intento.
+   */
+  const probarClave = async () => {
+    const clave = vapiKey.trim();
+    if (!clave) {
+      setEstadoVoz({ tipo: 'error', texto: 'Escribe una clave para probarla.' });
+      return;
+    }
+    setOcupadoVoz('probe');
+    setEstadoVoz(null);
+    setAssistants(null);
+    try {
+      const r = await api.probeVapiKey(clave);
+      setAssistants(r.assistants || []);
+      setEstadoVoz({
+        tipo: 'ok',
+        texto:
+          `${r.mensaje} ` +
+          (r.configuradoEstaEnLaCuenta
+            ? 'El agente configurado pertenece a esta cuenta.'
+            : 'OJO: el agente configurado NO está en esta cuenta — elige uno de la lista.'),
+      });
+    } catch (e: any) {
+      setAssistants(null);
+      setEstadoVoz({ tipo: 'error', texto: e.message });
+    } finally {
+      setOcupadoVoz(null);
+    }
+  };
+
+  /** Apunta el local a un agente concreto de la cuenta que se acaba de probar. */
+  const elegirAssistant = async (id: string) => {
+    setOcupadoVoz('assistant');
+    setEstadoVoz(null);
+    try {
+      const s = await api.setVapiAssistant(id, vapiKey.trim() || undefined);
+      aplicar(s);
+      setVapiKey('');
+      setAssistants(null);
+      setEstadoVoz({ tipo: 'ok', texto: 'Agente vinculado a este restaurante.' });
+    } catch (e: any) {
+      setEstadoVoz({ tipo: 'error', texto: e.message });
+    } finally {
+      setOcupadoVoz(null);
     }
   };
 
@@ -464,6 +516,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, onRestaura
         />
 
         <div className="flex flex-wrap gap-2">
+          <button onClick={probarClave} disabled={ocupadoVoz !== null} className={`${btn} bg-brand-surface-high border border-brand-outline text-brand-text hover:border-brand-primary/40`}>
+            {ocupadoVoz === 'probe' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4 text-brand-primary" />} Probar clave sin guardar
+          </button>
           <button onClick={guardarVapiKey} disabled={ocupadoVoz !== null} className={`${btn} bg-brand-surface-high border border-brand-outline text-brand-text hover:border-brand-primary/40`}>
             {ocupadoVoz === 'key' ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4 text-brand-primary" />} Guardar key
           </button>
@@ -483,6 +538,45 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, onRestaura
             </>
           )}
         </div>
+
+        {/* Agentes de la cuenta que se acaba de probar. Permite apuntar el
+            local a uno ya existente, que es el caso cuando cada restaurante
+            trae su propia cuenta de Vapi con su agente ya hecho. */}
+        {assistants && (
+          <div className="mt-3 rounded-lg border border-brand-outline bg-brand-surface-high p-3">
+            <p className="text-xs uppercase tracking-wide text-brand-text-dim mb-2">
+              Agentes en esa cuenta de Vapi
+            </p>
+            {assistants.length === 0 ? (
+              <p className="text-sm text-brand-text-dim">
+                La cuenta no tiene ningún agente todavía. Guarda la clave y pulsa «Crear agente de voz».
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {assistants.map((a) => (
+                  <li key={a.id} className="flex items-center justify-between gap-3">
+                    <span className="min-w-0 text-sm">
+                      <span className="block truncate text-brand-text">{a.nombre || '(sin nombre)'}</span>
+                      <span className="block truncate font-mono text-[11px] text-brand-text-dim">{a.id}</span>
+                    </span>
+                    {a.esElConfigurado ? (
+                      <span className="shrink-0 text-xs text-brand-primary">actual</span>
+                    ) : (
+                      <button
+                        onClick={() => elegirAssistant(a.id)}
+                        disabled={ocupadoVoz !== null}
+                        className="shrink-0 rounded-md border border-brand-outline px-2 py-1 text-xs text-brand-text hover:border-brand-primary/40"
+                      >
+                        {ocupadoVoz === 'assistant' ? '…' : 'Usar este'}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
         <Aviso estado={estadoVoz} />
       </Tarjeta>
 
