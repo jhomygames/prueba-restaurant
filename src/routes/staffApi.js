@@ -28,8 +28,21 @@ const RESERVAS = "Reservas";
 const CLIENTES = "Clientes";
 const CARTA = "Carta";
 
-const TABLE_STATUS_ES = { free: "Libre", reserved: "Reservada", occupied: "Ocupada" };
-const TABLE_STATUS_EN = { Libre: "free", Reservada: "reserved", Ocupada: "occupied" };
+const TABLE_STATUS_ES = {
+  free: "Libre",
+  reserved: "Reservada",
+  occupied: "Ocupada",
+  out_of_service: "Fuera de servicio",
+};
+// "Fuera de servicio" faltaba: al no estar, una mesa averiada caía en el
+// valor por defecto y el panel la pintaba como libre, aunque el backend sí la
+// excluía al asignar mesa. Dos vistas distintas de la misma realidad.
+const TABLE_STATUS_EN = {
+  Libre: "free",
+  Reservada: "reserved",
+  Ocupada: "occupied",
+  "Fuera de servicio": "out_of_service",
+};
 
 const RES_STATUS_ES = {
   pending: "pendiente",

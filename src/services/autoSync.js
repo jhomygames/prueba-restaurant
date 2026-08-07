@@ -16,6 +16,7 @@
  */
 
 const registry = require("./registry");
+const airtable = require("./airtableClient");
 const connectors = require("./connectors");
 
 const MINUTOS_POR_DEFECTO = 5;
@@ -29,6 +30,41 @@ function intervaloMs() {
   return Math.max(1, m) * 60 * 1000;
 }
 
+// Último día en que se limpiaron los estados de mesa, por restaurante.
+const ultimoReinicio = new Map();
+
+/**
+ * Devuelve a "Libre" las mesas que quedaron marcadas como ocupadas o reservadas
+ * en un servicio anterior.
+ *
+ * El campo `Estado` de una mesa no lleva fecha: describe el servicio en curso.
+ * Nadie lo devuelve a su sitio al cerrar, así que una mesa que se marcó ocupada
+ * el martes seguía apareciendo ocupada el jueves. Aquí se limpia una vez al
+ * día, al primer sondeo tras la medianoche.
+ *
+ * "Fuera de servicio" no se toca: una mesa averiada sigue averiada mañana.
+ */
+async function reiniciarMesasDelDia(restaurante) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  if (ultimoReinicio.get(restaurante.id) === hoy) return;
+
+  const ctx = { baseId: restaurante.baseId };
+  const mesas = await airtable.listRecords(ctx.baseId, "Mesas", {
+    filterByFormula: `OR({Estado} = 'Ocupada', {Estado} = 'Reservada')`,
+  });
+
+  for (const m of mesas) {
+    await airtable
+      .updateRecord(ctx.baseId, "Mesas", m.id, { Estado: "Libre" }, { typecast: true })
+      .catch((err) => console.error(`[autoSync] no se pudo liberar ${m.fields.Nombre}:`, err.message));
+  }
+
+  ultimoReinicio.set(restaurante.id, hoy);
+  if (mesas.length > 0) {
+    console.log(`[autoSync] ${restaurante.slug}: ${mesas.length} mesa(s) liberadas al empezar el día`);
+  }
+}
+
 async function pasada() {
   // Una pasada que tarde más que el intervalo no debe solaparse con la
   // siguiente: duplicaría el trabajo y las llamadas a Airtable.
@@ -40,6 +76,12 @@ async function pasada() {
   try {
     const locales = await registry.activeRestaurants();
     for (const restaurante of locales) {
+      // Esto no depende del conector: las mesas se quedan colgadas igual en un
+      // restaurante que reciba webhooks o que no tenga integración ninguna.
+      await reiniciarMesasDelDia(restaurante).catch((err) =>
+        console.error(`[autoSync] ${restaurante.slug} reinicio de mesas:`, err.message)
+      );
+
       const adapter = connectors.getAdapter(restaurante.integracion?.proveedor);
       if (!adapter?.soloSondeo) continue; // los de webhook ya nos avisan
 

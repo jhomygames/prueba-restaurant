@@ -252,6 +252,27 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
     );
   };
 
+  /**
+   * Estado real de una mesa EN LA FECHA QUE SE ESTÁ MIRANDO.
+   *
+   * `table.status` viene de un único campo guardado, sin fecha: sirve para el
+   * servicio de hoy (alguien sienta a un cliente de paso) pero no significa
+   * nada para mañana. Sin esta distinción, una mesa marcada como ocupada se
+   * quedaba roja para siempre y en todos los días del calendario.
+   *
+   * "Fuera de servicio" sí es global: una mesa rota lo está todos los días.
+   */
+  const estadoEnLaFecha = (table: Table): TableStatus => {
+    if (table.status === 'out_of_service') return 'out_of_service';
+    if (getActiveReservationForTable(table.id)) return 'reserved';
+
+    const hoy = new Date().toISOString().split('T')[0];
+    // Solo el día de hoy puede estar "ocupada" de verdad: es un estado del
+    // servicio en curso, no un dato del calendario.
+    if (selectedDate === hoy) return table.status;
+    return 'free';
+  };
+
   // Drag and Drop implementation relative to canvas percentage
   const handlePointerDown = (e: React.PointerEvent, id: string, type: 'table' | 'decoration') => {
     if (!isEditMode) return;
@@ -410,15 +431,14 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
     }
   };
 
-  const getStatusBorderColor = (status: TableStatus, tableId: string) => {
-    const activeRes = getActiveReservationForTable(tableId);
-    const effectiveStatus: TableStatus = activeRes ? 'reserved' : status;
-
-    switch (effectiveStatus) {
+  const getStatusBorderColor = (table: Table) => {
+    switch (estadoEnLaFecha(table)) {
       case 'occupied':
         return 'border-red-500/30 text-red-400 bg-red-500/10 shadow-red-500/5 hover:border-red-500/50';
       case 'reserved':
         return 'border-amber-500/30 text-amber-400 bg-amber-500/10 shadow-amber-500/5 hover:border-amber-500/50';
+      case 'out_of_service':
+        return 'border-zinc-700 text-zinc-600 bg-zinc-800/40 opacity-60 hover:border-zinc-600';
       default: // free
         return 'border-zinc-500/30 text-zinc-400 bg-zinc-500/10 shadow-zinc-500/5 hover:border-zinc-500/50';
     }
@@ -593,7 +613,7 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
                 )} ${
                   isSelected
                     ? 'border-4 border-brand-primary bg-brand-primary/20 shadow-[0_0_20px_rgba(245,158,11,0.2)] text-brand-primary scale-105 z-10'
-                    : getStatusBorderColor(table.status, table.id)
+                    : getStatusBorderColor(table)
                 } ${isEditMode ? 'hover:scale-105 hover:shadow-brand-primary/5 active:scale-95' : ''}`}
                 id={`dom-table-${table.id}`}
               >
@@ -694,7 +714,7 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
                   )}
                   
                   {/* Occupied sign */}
-                  {!activeRes && table.status === 'occupied' && (
+                  {!activeRes && estadoEnLaFecha(table) === 'occupied' && (
                     <div className="mt-1 bg-brand-secondary text-brand-surface font-sans font-bold text-[8px] px-1 rounded uppercase tracking-wider shadow-sm shrink-0">
                       Ocupado
                     </div>

@@ -648,10 +648,26 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
   const [restaurantName, setRestaurantName] = useState(session.restaurant.nombre);
 
   // Quick stats calculation
+  //
+  // El estado guardado de una mesa (`t.status`) no lleva fecha: describe el
+  // servicio de HOY. Contarlo tal cual hacía que, al mirar cualquier otro día
+  // del calendario, aparecieran mesas ocupadas que en realidad lo estaban hace
+  // días. Para el resto de fechas, lo único que ocupa una mesa es una reserva.
+  const hoyISO = new Date().toISOString().split('T')[0];
+  const estadoMesaEnFecha = (t: Table): TableStatus => {
+    if (t.status === 'out_of_service') return 'out_of_service';
+    const conReserva = reservations.some(
+      r => r.tableId === t.id && r.date === selectedDate &&
+           r.status !== 'completed' && r.status !== 'cancelled'
+    );
+    if (conReserva) return 'reserved';
+    return selectedDate === hoyISO ? t.status : 'free';
+  };
+
   const totalTables = tables.length;
-  const occupiedTablesCount = tables.filter(t => t.status === 'occupied').length;
-  const reservedTablesCount = tables.filter(t => t.status === 'reserved').length;
-  const freeTablesCount = tables.filter(t => t.status === 'free').length;
+  const occupiedTablesCount = tables.filter(t => estadoMesaEnFecha(t) === 'occupied').length;
+  const reservedTablesCount = tables.filter(t => estadoMesaEnFecha(t) === 'reserved').length;
+  const freeTablesCount = tables.filter(t => estadoMesaEnFecha(t) === 'free').length;
 
   return (
     <div className="min-h-screen bg-brand-bg text-brand-text font-sans overflow-x-hidden flex flex-col">

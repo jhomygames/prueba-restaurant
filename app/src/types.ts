@@ -1,5 +1,5 @@
 export type TableShape = 'square' | 'circle' | 'rectangle' | 'bar';
-export type TableStatus = 'free' | 'reserved' | 'occupied';
+export type TableStatus = 'free' | 'reserved' | 'occupied' | 'out_of_service';
 
 export interface Table {
   id: string;
