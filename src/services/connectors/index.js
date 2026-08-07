@@ -22,10 +22,11 @@ const history = require("../history");
 const demo = require("./demo");
 const thefork = require("./thefork");
 const n8n = require("./n8n");
+const supabase = require("./supabase");
 
 const TABLE_RESERVAS = "Reservas";
 
-const ADAPTERS = { demo, thefork, n8n };
+const ADAPTERS = { demo, thefork, n8n, supabase };
 
 function getAdapter(nombre) {
   return ADAPTERS[String(nombre || "").toLowerCase()] || null;
