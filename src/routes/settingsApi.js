@@ -549,21 +549,70 @@ router.post(
     const adapter = connectors.getAdapter(creds.provider);
     const problemas = [];
     if (!creds.activa) problemas.push("La integración está desactivada.");
-    if (!creds.webhookSecret) problemas.push("Falta el token de acceso para autenticar los avisos.");
-    if (!process.env.PUBLIC_BASE_URL) {
-      problemas.push("Falta configurar la dirección pública del servidor (PUBLIC_BASE_URL).");
+
+    // Los conectores que sondean no reciben avisos: pedirles un token de
+    // webhook o una URL pública sería exigir algo que no usan.
+    if (adapter?.soloSondeo) {
+      if (!creds.apiKey) problemas.push("Falta la clave de acceso a la plataforma.");
+      if (!creds.restauranteExternoId) problemas.push("Falta la referencia del proyecto.");
+    } else {
+      if (!creds.webhookSecret) problemas.push("Falta el token de acceso para autenticar los avisos.");
+      if (!process.env.PUBLIC_BASE_URL) {
+        problemas.push("Falta configurar la dirección pública del servidor (PUBLIC_BASE_URL).");
+      }
     }
 
     res.json({
       ok: problemas.length === 0,
       proveedor: adapter?.etiqueta || creds.provider,
-      recibePor: adapter?.authMode === "bearer" ? "webhook con token Bearer" : "webhook con secreto en la URL",
+      recibePor: adapter?.soloSondeo
+        ? "la app consulta la plataforma cada pocos minutos"
+        : adapter?.authMode === "bearer"
+          ? "webhook con token Bearer"
+          : "webhook con secreto en la URL",
       problemas,
       nota:
         adapter?.authMode === "bearer"
           ? "No podemos comprobar la conexión desde aquí: es la plataforma quien nos llama. La prueba real es hacer una reserva en ella."
           : undefined,
     });
+  })
+);
+
+/**
+ * Sincroniza AHORA con la plataforma, sin esperar al reloj externo.
+ *
+ * Hace falta por dos motivos: para ver el resultado al terminar de configurar,
+ * en vez de quedarse mirando el panel sin saber si funciona; y porque el
+ * disparador periódico vive fuera (Make), con su propio secreto, al que el
+ * dueño del restaurante no tiene acceso.
+ */
+router.post(
+  "/api/settings/integration/sync",
+  handle(async (req, res) => {
+    if (tooManyActions(req.restaurant.id)) {
+      return res.status(429).json({ error: "demasiadas_acciones" });
+    }
+    const creds = connectors.integrationCredentials(req.restaurant);
+    if (!creds || !creds.provider) return res.status(400).json({ error: "sin_integracion" });
+    if (!creds.activa) return res.status(400).json({ error: "integracion_inactiva" });
+
+    try {
+      const r = await connectors.syncTenant(req.restaurant);
+      const cuenta = (accion) => (r.resultados || []).filter((x) => x.action === accion).length;
+      res.json({
+        ok: true,
+        procesadas: r.procesadas ?? (r.resultados || []).length,
+        creadas: cuenta("created"),
+        actualizadas: cuenta("updated"),
+        canceladas: cuenta("cancelled"),
+        ignoradas: cuenta("ignored"),
+        errores: cuenta("error"),
+        detalle: r,
+      });
+    } catch (err) {
+      res.status(400).json({ ok: false, error: err.message });
+    }
   })
 );
 
