@@ -511,6 +511,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, onRestaura
         subtitulo="Recepcionista telefónica 24/7 de este local"
         badge={<Badge activo={settings.voz.configured} textoActivo={settings.voz.telefono ? `Activo · ${settings.voz.telefono}` : 'Activo'} />}
       >
+        {/* La app dejó de gestionar agentes en Vapi al pasar las reservas a
+            Supabase. Los botones se dejan visibles pero avisando: quitarlos sin
+            explicación haría pensar que se ha roto algo. */}
+        <div className="mb-3 rounded-lg border border-brand-outline bg-brand-surface-high p-3 text-sm text-brand-text-dim">
+          <span className="text-brand-text">Esta sección ya no está en uso.</span> Las reservas
+          llegan ahora desde Supabase, donde las dejan los flujos de n8n. El agente de voz sigue
+          funcionando: simplemente no se configura desde aquí.
+        </div>
+      </Tarjeta>
+
+      {/* Bloque original, conservado para poder reactivarlo sin rehacerlo. */}
+      <div className="hidden">
         {settings.voz.telefono && (
           <div className="bg-brand-surface-low border border-brand-outline rounded-xl p-3 text-center">
             <span className="text-[10px] uppercase font-mono text-brand-muted block">Teléfono del restaurante</span>
@@ -593,7 +605,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, onRestaura
         )}
 
         <Aviso estado={estadoVoz} />
-      </Tarjeta>
+      </div>
 
       {/* --- WhatsApp (Twilio) --- */}
       <Tarjeta

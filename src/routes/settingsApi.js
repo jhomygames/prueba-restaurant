@@ -143,8 +143,33 @@ router.put(
 
 // ---------- Voz (Vapi) ----------
 
+/**
+ * ¿Sigue la app gestionando agentes en Vapi?
+ *
+ * Se apagó al pasar las reservas a Supabase: la app ya no crea ni configura
+ * agentes, solo lee lo que los flujos de n8n dejan en la base. Esto solo afecta
+ * a las llamadas SALIENTES a api.vapi.ai; el endpoint /vapi/tools sigue vivo
+ * porque es el que usan los workflows de n8n para consultarnos.
+ *
+ * Para volver a activarlo: VAPI_GESTION_HABILITADA=1 en el entorno.
+ */
+function gestionVapiActiva() {
+  return process.env.VAPI_GESTION_HABILITADA === "1";
+}
+
+function siVapiActivo(req, res, next) {
+  if (gestionVapiActiva()) return next();
+  return res.status(409).json({
+    error: "gestion_vapi_desactivada",
+    mensaje:
+      "La app ya no gestiona agentes de Vapi. Las reservas llegan desde Supabase, " +
+      "donde las dejan los flujos de n8n.",
+  });
+}
+
 router.put(
   "/api/settings/vapi",
+  siVapiActivo,
   handle(async (req, res) => {
     const { apiKey, assistantId } = req.body || {};
     const cambios = {};
@@ -202,6 +227,7 @@ router.put(
  */
 router.post(
   "/api/settings/vapi/probe",
+  siVapiActivo,
   handle(async (req, res) => {
     const apiKey = String((req.body || {}).apiKey || "").trim();
     if (!apiKey) return res.status(400).json({ error: "sin_api_key" });
@@ -288,6 +314,7 @@ router.post(
 
 router.post(
   "/api/settings/vapi/provision",
+  siVapiActivo,
   handle(async (req, res) => {
     if (tooManyActions(req.restaurant.id)) {
       return res.status(429).json({ error: "demasiadas_acciones" });
@@ -321,6 +348,7 @@ router.post(
 
 router.post(
   "/api/settings/vapi/sync-prompt",
+  siVapiActivo,
   handle(async (req, res) => {
     const creds = registry.vapiApiKey(req.restaurant);
     if (!creds) return res.status(400).json({ error: "sin_api_key_vapi" });
@@ -338,6 +366,7 @@ router.post(
 
 router.post(
   "/api/settings/vapi/test",
+  siVapiActivo,
   handle(async (req, res) => {
     const creds = registry.vapiApiKey(req.restaurant);
     if (!creds) return res.status(400).json({ error: "sin_api_key_vapi" });

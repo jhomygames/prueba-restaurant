@@ -47,4 +47,7 @@ if (fs.existsSync(spaDist)) {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en el puerto ${PORT}`);
+  // Mantiene al día las reservas de las plataformas que hay que ir a consultar
+  // (Supabase). Las que avisan por webhook no pasan por aquí.
+  require("./services/autoSync").iniciar();
 });

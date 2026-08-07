@@ -84,6 +84,11 @@ async function upsertExternalReservation(ctx, r) {
   // --- Cancelación ---
   if (r.status === "cancelled") {
     if (!existente) return { action: "ignored", reason: "cancelacion_de_reserva_desconocida" };
+    // Ya estaba cancelada: al sondear se relee cada pasada, y volver a marcarla
+    // sería una escritura inútil y una línea de traza repetida cada vez.
+    if (existente.fields.Estado === "cancelada") {
+      return { action: "unchanged", id: existente.id };
+    }
     await airtable.updateRecord(
       ctx.baseId,
       TABLE_RESERVAS,
@@ -111,6 +116,16 @@ async function upsertExternalReservation(ctx, r) {
       Notas: r.notes || "",
       Turno: r.shift || reservations.derivarTurno(r.time),
     };
+
+    // Los conectores que sondean releen las mismas reservas una y otra vez.
+    // Sin esta comprobación, cada pasada reescribiría TODAS aunque no hubiera
+    // cambiado nada: con pocas reservas da igual, pero con un servicio lleno
+    // son cientos de escrituras inútiles cada cuarto de hora.
+    const sinCambios = Object.entries(nuevos).every(
+      ([campo, valor]) => String(existente.fields[campo] ?? "") === String(valor ?? "")
+    );
+    if (sinCambios) return { action: "unchanged", id: existente.id };
+
     await airtable.updateRecord(ctx.baseId, TABLE_RESERVAS, existente.id, nuevos, { typecast: true });
     await history.registrar(ctx, {
       accion: "modified",
