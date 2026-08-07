@@ -80,6 +80,105 @@ scripts/
 
 ---
 
+## Sesión 2026-08-07 · La app se alimenta de Supabase, y se desconecta de Vapi
+
+Cambio de rumbo: las reservas ya no llegan a la app por el canal de voz, sino
+leyendo la base de Supabase donde las dejan los flujos de n8n.
+
+### Por qué la llamada de ayer «no se registró»
+
+Se registró — en Supabase. La reserva `RES-335529-185` estaba ahí, creada por
+voz. El agente de Vapi seguía apuntando a los workflows de n8n, que escriben en
+esa base; la app nunca estuvo en ese circuito. Se comprobó además simulando una
+llamada con el formato exacto de Vapi: la reserva de 5 personas apareció en el
+panel con mesa, código y alergias. Nuestra parte funcionaba.
+
+### Conector de Supabase
+
+A diferencia de los demás, **va a preguntar en vez de esperar aviso**. Es la
+única forma de enterarse de un cambio hecho a mano en la tabla, porque eso no
+dispara ningún webhook.
+
+Se trae las reservas de **hoy en adelante, todas**, no solo las nuevas: la tabla
+tiene `created_at` pero no `updated_at`, así que filtrar por fecha de creación
+perdería justo lo que más importa —una reserva vieja que acaban de cancelar o
+mover—. El conjunto de reservas futuras es pequeño por definición.
+
+Reutiliza el traductor del conector de n8n a propósito: la tabla de Supabase y
+lo que n8n manda por webhook son la misma forma de datos, y duplicar el mapeo
+solo serviría para que un día dejaran de coincidir.
+
+### La clave publicable no servía, y fallaba en silencio
+
+Al probarla devolvía **`200 OK` con lista vacía**. No un error: la tabla tiene
+protección de filas y ninguna regla permite leer a esa clave. El conector habría
+trabajado «correctamente» trayendo cero reservas para siempre.
+
+Se plantearon tres salidas (clave secreta nueva, la `service_role` actual, o
+abrir la tabla a la clave pública). Se descartó la tercera en la propuesta: los
+nombres y teléfonos de los clientes quedarían legibles por cualquiera. **El
+usuario eligió la `service_role` actual**, que es la que ya está expuesta en los
+workflows; queda pendiente rotarla, y entonces bastará con pegar la nueva.
+
+### Sondeo automático dentro del servidor
+
+`autoSync.js`, cada 5 minutos. **No se dejó en Make**, como los recordatorios,
+porque el sondeo es la única vía por la que la app se entera de un cambio en
+Supabase: colgarlo de un servicio externo, con su propio secreto y su plan
+gratuito de dos escenarios, sería un punto de fallo silencioso — si Make deja de
+disparar, el panel se queda desactualizado sin que nadie lo note.
+
+Se añadió también un botón de **sincronizar ahora**: al terminar de configurar
+una integración no había forma de ver si funcionaba, porque el disparador
+periódico vive fuera y el dueño del restaurante no tiene su secreto.
+
+### Dos escrituras inútiles, detectadas al mirar los números
+
+Cada pasada reportaba `actualizadas: 2` sin que nada hubiera cambiado. Al releer
+las mismas filas una y otra vez, el pipeline **reescribía todas las reservas** y
+volvía a marcar como cancelada una que ya lo estaba. Con tres reservas da igual;
+con un servicio lleno son cientos de escrituras cada cuarto de hora. Ahora se
+compara antes de escribir. El registro también ignora el estado estable: un
+aviso cada cinco minutos diciendo lo mismo tapa lo que importa.
+
+### Desconexión de Vapi
+
+La app deja de gestionar agentes: las rutas que llaman a `api.vapi.ai` responden
+409 con explicación, y la tarjeta del panel lo dice en vez de desaparecer sin
+más. Reversible con `VAPI_GESTION_HABILITADA=1`.
+
+**`/vapi/tools` sigue vivo a propósito**: es el endpoint que usan los workflows
+de n8n que enlazamos en la sesión anterior. Apagarlo los rompería.
+
+### Verificado contra la base real
+
+Se creó una fila de prueba en Supabase (no se tocó ninguna real), y se comprobó
+el ciclo completo: **alta** → aparece con mesa y con la alergia extraída del
+texto; **modificación** (2 personas 21:00 → 7 personas 22:30) → se refleja;
+**cancelación** → se refleja. Después se borró de ambos lados. Dos pasadas
+seguidas sin cambios no escriben nada.
+
+En producción: Vapi devuelve 409, el sondeo manual sigue funcionando y
+`/vapi/tools` sigue respondiendo.
+
+### Seguridad, pendiente de decisión del usuario
+
+La tabla **`whatsapp_chat_historial` tiene la protección de filas desactivada**:
+46 conversaciones legibles por cualquiera con la clave pública. No se tocó —
+activarla sin definir permisos bloquearía todos los accesos y rompería el flujo
+de WhatsApp.
+
+### Estado
+
+Commit `fac6c5d` en `main`, desplegado y verificado.
+
+**Pendiente**: rotar la `service_role` de Supabase; decidir qué hacer con
+`whatsapp_chat_historial`; y, cuando se retome lo multi-restaurante, añadir una
+columna de restaurante a la tabla `reservas` (hoy es de un solo local, así que
+la app **no** puede leer Supabase en directo sin que todos vean lo mismo).
+
+---
+
 ## Sesión 2026-08-03 · Una cuenta de Vapi por restaurante
 
 El objetivo se concretó: cada restaurante tendrá **su propia cuenta de Vapi**
