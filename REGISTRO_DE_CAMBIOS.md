@@ -80,6 +80,116 @@ scripts/
 
 ---
 
+## Sesión 2026-08-08 · Supabase como base principal, y las mesas por día
+
+Dos frentes: arreglar un fallo que el usuario venía notando, y empezar la
+migración a Supabase como base única.
+
+### Las mesas se quedaban ocupadas varios días
+
+El fallo reportado era real y tenía **tres capas**:
+
+1. El campo `Estado` de una mesa **no lleva fecha**: describe el servicio en
+   curso, pero se usaba como si valiera para cualquier día. El plano pintaba una
+   mesa ocupada en TODAS las fechas del calendario.
+2. Los contadores de arriba hacían lo mismo — verificado antes de tocar nada:
+   el 20 de agosto marcaba *4 ocupadas* por algo que pasó el día 7.
+3. **Nadie las liberaba nunca.** Había 9 mesas colgadas entre los dos locales,
+   arrastradas de servicios anteriores.
+
+Ahora el estado guardado solo cuenta para hoy; cualquier otro día, lo único que
+ocupa una mesa es una reserva de esa fecha. El sondeo las libera una vez al día
+tras la medianoche. "Fuera de servicio" no se toca: una mesa averiada sigue
+averiada mañana.
+
+**De paso**, ese estado faltaba en el mapeo entre Airtable y el panel, así que
+una mesa averiada llegaba como *libre* aunque el backend sí la excluía al
+asignar. Dos vistas distintas de la misma realidad.
+
+### Supabase pasa a ser la base principal
+
+El objetivo, en palabras del usuario: que dar de alta un restaurante nuevo sea
+copiar lo que ya hay, no crear otra base de datos.
+
+Eso cambia cómo se separan los locales:
+
+| | Airtable | Supabase |
+|---|---|---|
+| Separación | una **base** por local | una **columna** `restaurante` |
+| Alta | crear base, 5 tablas, tipos, enlaces | insertar filas |
+| Aislamiento | lo garantiza la infraestructura | **lo garantiza el código** |
+
+Esa última fila es la contrapartida y conviene tenerla presente: Supabase **no
+se queja** de una consulta sin filtrar, simplemente devuelve las filas de todos
+los locales. Por eso el restaurante es el primer argumento y es obligatorio,
+igual que lo era `baseId`: sin él la llamada falla en el acto. Las escrituras
+filtran por restaurante **además** del id, así que un id de otro local no
+modifica nada. Ambas cosas verificadas contra la base real.
+
+Lo construido:
+
+- **Esquema**: tablas `mesas` (17 filas del plano real), `carta` (38 platos),
+  `restaurantes`, `usuarios`, `turnos`; y los campos que le faltaban a
+  `reservas` y `clientes`. Todo **aditivo**: no se tocó nada de lo que usan los
+  flujos de n8n, así que siguieron funcionando durante el cambio.
+- **`supabaseClient.js`** y **`repo/reservas.js`**: acceso a datos y lectura,
+  devolviendo las mismas formas que producía Airtable — es lo que permite
+  migrar por partes en vez de todo de golpe.
+- **`resolver_restaurante()`**: traduce assistant de Vapi, número de WhatsApp o
+  teléfono del local a su slug. Vive en la base y no en cada workflow para que
+  la regla esté en un sitio. Devuelve NULL si no reconoce nada, a propósito: es
+  mejor que n8n vea que no sabe de quién es la reserva a que la escriba en el
+  local equivocado.
+- **`scripts/alta-restaurante-supabase.js`**: probado, da de alta un local con
+  plano y carta en segundos.
+
+### Dos protecciones que solo existían en n8n
+
+Portadas a la app, con pruebas, porque sin ellas apuntar Vapi a la app sería un
+paso atrás:
+
+- **Fechas habladas**: *"mañana"*, *"el próximo viernes"* resueltas en código y
+  no pidiéndoselo al modelo. Lo que no se entiende devuelve `null` — preguntar
+  otra vez es mejor que adivinar mal. Se calcula en la zona del restaurante: con
+  husos distintos, "mañana" cae en el día equivocado unas horas cada noche.
+- **Horario de apertura**: la app aceptaba reservas a las cinco de la mañana. Se
+  modela por turnos y no como un único intervalo porque un restaurante cierra
+  entre comida y cena. Un local sin horario configurado no se bloquea.
+
+**Fallo propio**: construía los números en palabras pegando "veinti" + la
+unidad, y en español tres llevan tilde (veintidós, veintitrés, veintiséis). El
+agente los lee en voz alta, así que se habría notado. Lo cazó la prueba.
+
+### La decisión de arquitectura
+
+Al ir a rehacer los workflows apareció una bifurcación. Se plantearon tres vías
+y se eligió la **C**:
+
+- **A** — n8n escribe directo en Supabase: tendría que reimplementar asignación
+  de mesa, alérgenos, código y anti-duplicados. Duplicado y sin probar.
+- **B** — n8n llama a la app: menos trabajo, pero deja la lógica partida en dos
+  para siempre. *Se propuso primero; era la respuesta cómoda, no la mejor.*
+- **C** — **elegida**: la voz va directa a la app; WhatsApp y notificaciones se
+  quedan en n8n, que hace bien ese trabajo (buffer, mutex, plantillas de Twilio,
+  reintento a SMS). n8n no queda como conector de base de datos: queda como capa
+  de mensajería.
+
+### Estado
+
+Commit `3e03db7` en `main`. Las mesas por día están desplegadas y verificadas.
+La migración a Supabase está a medias **y no afecta a producción todavía**: la
+app sigue leyendo de Airtable.
+
+**Pendiente**: capa de escritura sobre Supabase; cambiar los servicios y el
+login; que la app dispare los tres webhooks de notificación de n8n; migrar los
+datos vivos; y por último apuntar Vapi a la app, empezando por
+`check_availability` que es de solo lectura.
+
+**Sigue pendiente de decisión**: `whatsapp_chat_historial` sin protección de
+filas, y rotar la `service_role` de Supabase.
+
+---
+
 ## Sesión 2026-08-07 · La app se alimenta de Supabase, y se desconecta de Vapi
 
 Cambio de rumbo: las reservas ya no llegan a la app por el canal de voz, sino
