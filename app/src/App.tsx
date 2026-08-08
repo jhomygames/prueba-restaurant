@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-// Cada cuánto se refresca el estado desde Airtable (vía la API del backend).
+// Cada cuánto se refresca el estado desde Supabase (vía la API del backend).
 // Así las reservas creadas por el agente de voz o WhatsApp aparecen solas.
 const POLL_INTERVAL_MS = 20000;
 
@@ -139,7 +139,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
     isPollingPaused.current = isEditMode || isBookingModalOpen;
   }, [isEditMode, isBookingModalOpen]);
 
-  // --- Carga inicial + polling desde Airtable (vía backend) ---
+  // --- Carga inicial + polling desde Supabase (vía backend) ---
   const knownReservationIds = useRef<Set<string> | null>(null);
   const isPollingPaused = useRef(false);
   const isRefreshing = useRef(false);
@@ -248,7 +248,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
     });
 
     if (itemsToCancel.length > 0 || itemsToComplete.length > 0) {
-      // Persistir en Airtable los cambios de estado automáticos
+      // Persistir en Supabase los cambios de estado automáticos
       itemsToCancel.forEach(id =>
         api.updateReservation(id, { status: 'cancelled' }).catch(err => console.error('auto-cancel:', err))
       );
@@ -421,7 +421,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
   };
 
   // --- Table Layout Event Handlers (Floor Plan Editor) ---
-  // Cada cambio se refleja localmente al instante y se persiste en Airtable
+  // Cada cambio se refleja localmente al instante y se persiste en Supabase
   // (con debounce, porque el drag dispara updates continuos).
   const handleUpdateTable = (updatedTable: Table) => {
     setTables(prev => prev.map(t => t.id === updatedTable.id ? updatedTable : t));
@@ -435,12 +435,12 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
       setTables(prev => [...prev, created]);
       addNotificationLog(
         "Plano Actualizado",
-        `Se ha añadido la nueva mesa "${created.name}" (${created.seats} pax) y guardado en Airtable.`,
+        `Se ha añadido la nueva mesa "${created.name}" (${created.seats} pax) y guardado en Supabase.`,
         'system'
       );
     } catch (err) {
       console.error('createTable:', err);
-      alert('No se pudo guardar la mesa nueva en Airtable. Revisa la conexión.');
+      alert('No se pudo guardar la mesa nueva en Supabase. Revisa la conexión.');
     }
   };
 
@@ -449,7 +449,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
       await api.deleteTable(tableId);
     } catch (err) {
       console.error('deleteTable:', err);
-      alert('No se pudo eliminar la mesa en Airtable. Revisa la conexión.');
+      alert('No se pudo eliminar la mesa en Supabase. Revisa la conexión.');
       return;
     }
     setTables(prev => prev.filter(t => t.id !== tableId));
@@ -459,7 +459,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
     );
     addNotificationLog(
       "Plano Actualizado",
-      "Se ha eliminado la mesa del plano y de Airtable. Las reservas asignadas se han desvinculado.",
+      "Se ha eliminado la mesa del plano y de Supabase. Las reservas asignadas se han desvinculado.",
       'system'
     );
   };
@@ -498,7 +498,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
       );
     } catch (err) {
       console.error('createDish:', err);
-      alert('No se pudo guardar el plato en Airtable. Revisa la conexión.');
+      alert('No se pudo guardar el plato en Supabase. Revisa la conexión.');
     }
   };
 
@@ -513,7 +513,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
       );
     } catch (err) {
       console.error('updateDish:', err);
-      alert('No se pudo actualizar el plato en Airtable. Revisa la conexión.');
+      alert('No se pudo actualizar el plato en Supabase. Revisa la conexión.');
     }
   };
 
@@ -523,7 +523,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
       await api.deleteDish(id);
     } catch (err) {
       console.error('deleteDish:', err);
-      alert('No se pudo eliminar el plato en Airtable. Revisa la conexión.');
+      alert('No se pudo eliminar el plato en Supabase. Revisa la conexión.');
       return;
     }
     setMenu(prev => prev.filter(d => d.id !== id));
@@ -554,7 +554,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
           'system'
         );
       } else {
-        // Create new reservation (queda registrada en Airtable, y el cliente
+        // Create new reservation (queda registrada en Supabase, y el cliente
         // se da de alta/actualiza en la tabla Clientes automáticamente)
         const created = await api.createReservation(resData);
         setReservations(prev => [...prev, created]);
@@ -567,7 +567,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
       }
     } catch (err) {
       console.error('saveReservation:', err);
-      alert('No se pudo guardar la reserva en Airtable. Revisa la conexión.');
+      alert('No se pudo guardar la reserva en Supabase. Revisa la conexión.');
     }
   };
 
@@ -623,15 +623,15 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
     }
   };
 
-  // Las mesas y reservas viven en Airtable: aquí solo se restauran los
+  // Las mesas y reservas viven en Supabase: aquí solo se restauran los
   // elementos locales (decoración del plano) y se fuerza una resincronización.
   const handleResetDefaults = () => {
-    if (confirm('¿Restaurar la decoración del plano por defecto y resincronizar con Airtable? (Las mesas, reservas y clientes NO se tocan: viven en Airtable.)')) {
+    if (confirm('¿Restaurar la decoración del plano por defecto y resincronizar con Airtable? (Las mesas, reservas y clientes NO se tocan: viven en Supabase.)')) {
       localStorage.removeItem(ns('decorations'));
       setDecorations(INITIAL_DECORATIONS);
       setNotifications([]);
       refreshFromServer(false);
-      addNotificationLog("Sistema Resincronizado", "Decoración restaurada y datos recargados desde Airtable.", 'system');
+      addNotificationLog("Sistema Resincronizado", "Decoración restaurada y datos recargados desde Supabase.", 'system');
     }
   };
 
@@ -1096,7 +1096,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
                         </div>
                         <div>
                           <h4 className="font-sans font-bold text-xs text-brand-text">Simular LLAMADA AI</h4>
-                          <p className="text-[9px] text-brand-muted">Agente real (Claude) + reserva en Airtable</p>
+                          <p className="text-[9px] text-brand-muted">Agente real (Claude) + reserva en Supabase</p>
                         </div>
                       </div>
                       <span className="text-[9px] font-mono text-brand-secondary font-bold animate-pulse shrink-0">
@@ -1279,7 +1279,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
         isOpen={isCallOpen}
         onClose={() => setIsCallOpen(false)}
         onReservationCreated={() => {
-          // El agente ya creó la reserva en Airtable; refrescamos el plano.
+          // El agente ya creó la reserva en Supabase; refrescamos el plano.
           refreshFromServer(false);
         }}
         onAddNotification={addNotificationLog}

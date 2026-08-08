@@ -7,7 +7,7 @@ const getRelativeDate = (offsetDays: number): string => {
   return d.toISOString().split('T')[0];
 };
 
-// Catálogo alineado con el campo "Alergias" de Airtable y con los 14
+// Catálogo alineado con el campo "Alergias" de Supabase y con los 14
 // alérgenos obligatorios de la carta (menu.json del backend), más dietas.
 export const ALLERGIES_OPTIONS = [
   'Gluten',

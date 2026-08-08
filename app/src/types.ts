@@ -10,7 +10,7 @@ export interface Table {
   y: number; // position from top in percentage (0 to 100) or grid units
   shape: TableShape;
   rotation: number; // in degrees (0, 90, 180, 270)
-  zone?: string; // Interior / Terraza / Barra (campo Zona en Airtable)
+  zone?: string; // Interior / Terraza / Barra (campo Zona en Supabase)
 }
 
 export type DecorationType = 'wall' | 'furniture' | 'plant' | 'bar_counter';
