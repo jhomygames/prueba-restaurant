@@ -18,7 +18,35 @@ const app = express();
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
-app.get("/health", (req, res) => res.json({ ok: true }));
+/**
+ * Estado del servicio y de su configuración.
+ *
+ * Informa de qué variables de entorno están puestas, NUNCA de su valor: solo
+ * si existen y cuántos caracteres tienen. Sin esto, una variable mal escrita o
+ * pegada con comillas se manifiesta como un 500 genérico, y la única forma de
+ * averiguarlo es ir desplegando a ciegas.
+ */
+app.get("/health", (req, res) => {
+  const presente = (v) => {
+    const valor = process.env[v];
+    if (!valor) return "FALTA";
+    // Un valor entre comillas o con espacios pegados es un fallo habitual al
+    // copiarlo en el panel de un servicio, y se nota en la longitud.
+    const sospechoso = /^["']|["']$|^\s|\s$/.test(valor);
+    return `ok (${valor.length} car.${sospechoso ? ", OJO: comillas o espacios" : ""})`;
+  };
+
+  res.json({
+    ok: true,
+    config: {
+      SUPABASE_URL: presente("SUPABASE_URL"),
+      SUPABASE_SERVICE_KEY: presente("SUPABASE_SERVICE_KEY"),
+      AIRTABLE_API_KEY: presente("AIRTABLE_API_KEY"),
+      AUTH_JWT_SECRET: presente("AUTH_JWT_SECRET"),
+      PUBLIC_BASE_URL: presente("PUBLIC_BASE_URL"),
+    },
+  });
+});
 
 app.use(vapiToolsRouter);
 app.use(whatsappRouter);
