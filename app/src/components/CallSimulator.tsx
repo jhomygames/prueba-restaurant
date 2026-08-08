@@ -6,7 +6,7 @@ import { getToken } from '../api';
 interface CallSimulatorProps {
   isOpen: boolean;
   onClose: () => void;
-  // Se dispara cuando el agente crea la reserva en Airtable, para refrescar el plano.
+  // Se dispara cuando el agente crea la reserva en Supabase, para refrescar el plano.
   onReservationCreated: () => void;
   onAddNotification: (title: string, message: string, type: 'incoming_call') => void;
 }
@@ -224,7 +224,7 @@ export const CallSimulator: React.FC<CallSimulatorProps> = ({
                 <p className="text-sm font-mono text-brand-secondary tracking-widest mb-4">CLIENTE SIMULADO</p>
                 <div className="bg-brand-surface-low border border-brand-outline rounded-lg p-3 max-w-sm mb-8">
                   <p className="text-xs text-brand-muted">
-                    Al contestar, la recepcionista <strong className="text-brand-text">María</strong> (el mismo agente de voz de Vapi, con sus herramientas) atenderá a un cliente simulado por Claude. Si todo va bien, <strong className="text-brand-text">la reserva se creará de verdad en Airtable</strong> y aparecerá en el plano.
+                    Al contestar, la recepcionista <strong className="text-brand-text">María</strong> (el mismo agente de voz de Vapi, con sus herramientas) atenderá a un cliente simulado por Claude. Si todo va bien, <strong className="text-brand-text">la reserva se creará de verdad en Supabase</strong> y aparecerá en el plano.
                   </p>
                 </div>
 
