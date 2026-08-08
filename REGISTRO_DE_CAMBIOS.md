@@ -80,6 +80,64 @@ scripts/
 
 ---
 
+## Sesión 2026-08-08 (noche) · Supabase en producción
+
+La migración está desplegada y verificada. El camino tuvo dos vueltas atrás que
+conviene tener escritas.
+
+### Producción llevaba rota desde la sesión anterior
+
+Al ir a desplegar se descubrió que **el código de Supabase ya estaba subido**,
+de un push anterior, pero Railway no tenía las credenciales: el panel devolvía
+500 en el login y el equipo llevaba tiempo sin ver sus reservas.
+
+**Error de método**: se dio por hecho que "no estaba desplegado" sin
+comprobarlo. Había que haber mirado el estado real de producción antes de
+asumirlo, no después.
+
+Se restauró el servicio revirtiendo **solo los dos commits de las rutas**, y
+dejando intacta toda la capa nueva. El criterio: unos minutos con datos algo
+desfasados en Airtable son preferibles a un panel que no carga — lo primero se
+nota y se explica, lo segundo deja al equipo a ciegas en pleno servicio.
+
+### El diagnóstico que hacía falta
+
+Tras un segundo intento fallido —el usuario había añadido las variables pero el
+servidor seguía sin verlas—, se dejó de desplegar a ciegas: `/health` pasa a
+informar de **qué variables están puestas**, con su longitud y un aviso si
+llevan comillas o espacios pegados. Nunca su valor.
+
+Como decir «FALTA» no basta cuando alguien jura haberla puesto, se añadió
+además la lista de **nombres** de variables que contienen «supa». Así «no
+aparece» se convierte en «la tienes, pero se llama de otra forma».
+
+Resultó ser más simple: faltaba pulsar Deploy en Railway. Pero el diagnóstico se
+queda, porque este problema se repetirá con cada restaurante nuevo.
+
+### Verificado en producción
+
+Panel: login como **El Rincón Venezolano**, 17 mesas, 38 platos, 10 clientes.
+
+Y una llamada real al agente:
+
+- *«¿Tenéis mesa el próximo viernes a las nueve para cuatro?»* → resuelve la
+  fecha hablada y confirma disponibilidad.
+- *«¿Y a las cinco de la mañana?»* → «A esa hora está cerrado. Ese día abrimos
+  de 13:00 a 16:30 y de 20:00 a 23:30».
+- *«¿Qué tenéis sin gluten?»* → 21 platos.
+- Un assistant desconocido → `restaurante_no_identificado`, sin escribir nada.
+
+### Estado
+
+Commit `b5e06de` en `main`, desplegado. **La app funciona íntegramente sobre
+Supabase**: panel, login, agente, escritura y notificaciones.
+
+**Pendiente**: apuntar Vapi a la app (empezando por `check_availability`, la
+única de solo lectura) y jubilar los cinco workflows de reservas sin borrarlos.
+Y la fase de seguridad al cierre del proyecto.
+
+---
+
 ## Sesión 2026-08-08 (tarde) · La app entera sobre Supabase
 
 Se completó la migración: escritura, directorio, login, agente, notificaciones y
