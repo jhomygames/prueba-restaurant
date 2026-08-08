@@ -144,17 +144,19 @@ router.put(
 // ---------- Voz (Vapi) ----------
 
 /**
- * ¿Sigue la app gestionando agentes en Vapi?
+ * ¿Gestiona la app los agentes de Vapi?
  *
- * Se apagó al pasar las reservas a Supabase: la app ya no crea ni configura
- * agentes, solo lee lo que los flujos de n8n dejan en la base. Esto solo afecta
- * a las llamadas SALIENTES a api.vapi.ai; el endpoint /vapi/tools sigue vivo
- * porque es el que usan los workflows de n8n para consultarnos.
+ * Estuvo apagado mientras la app no estaba en el camino de la llamada: entonces
+ * Vapi hablaba con n8n y configurar agentes desde aquí no tenía sentido.
  *
- * Para volver a activarlo: VAPI_GESTION_HABILITADA=1 en el entorno.
+ * Vuelve a estar activo porque la situación cambió: ahora es la app quien
+ * atiende las herramientas del agente, así que hay que poder apuntarlo aquí y
+ * mantener su guion al día.
+ *
+ * Se puede desactivar con VAPI_GESTION_HABILITADA=0.
  */
 function gestionVapiActiva() {
-  return process.env.VAPI_GESTION_HABILITADA === "1";
+  return process.env.VAPI_GESTION_HABILITADA !== "0";
 }
 
 function siVapiActivo(req, res, next) {
