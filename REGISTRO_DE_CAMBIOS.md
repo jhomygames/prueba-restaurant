@@ -80,6 +80,58 @@ scripts/
 
 ---
 
+## Sesión 2026-08-09 · Vapi apuntado a la app, y revisión de seguridad
+
+**Vapi ya habla con la app.** El asistente de El Rincón Venezolano
+(`e05a8f76-…`) tiene sus herramientas apuntando a `/vapi/tools`. Verificado con
+una llamada simulada: `check_availability` resolvió «mañana» a 2026-08-10, dio
+la fecha hablada correcta y detectó el turno de cena.
+
+### El corte de Railway
+
+Se acabó el crédito de prueba y Railway apagó el servicio: **todas** las rutas
+devolvían `Application not found` — un 404 de la plataforma, no de la app. Se
+pasó a plan Hobby. Al volver, `/api/settings` seguía dando
+`Cannot read properties of undefined (reading 'accountSid')`: Railway servía el
+**último build completado**, no el commit ya subido. Un commit vacío forzó la
+reconstrucción y se arregló solo.
+
+Lección: cuando producción falla justo después de un corte de plataforma, antes
+de tocar código hay que confirmar **qué versión se está sirviendo**.
+
+### Revisión de seguridad e integridad
+
+Lo que está bien: el aislamiento entre restaurantes de `supabaseClient` (tenant
+obligatorio, escrituras filtradas por restaurante *además* del id), el panel y
+los jobs internos rechazan sin credenciales (401), los secretos se guardan
+cifrados y nunca vuelven al navegador, la firma de Twilio se valida, y ni `.env`
+ni las credenciales están versionados.
+
+Lo que no, por orden de gravedad:
+
+1. **`/vapi/tools` no autentica a nadie.** `VAPI_WEBHOOK_SECRET` no está puesto,
+   y el código lo trata como opcional a propósito para no tumbar un agente en
+   activo. Comprobado: responde 200 sin credencial alguna. El assistant id no es
+   un secreto — se ve en el panel de Vapi y lo devuelve nuestra propia
+   `/api/settings` —, así que cualquiera que lo tenga puede crear, modificar y
+   cancelar reservas. **Es el fallo más grave del sistema ahora mismo.**
+2. **WhatsApp e integraciones siguen sobre Airtable.** `whatsapp.js` e
+   `integrations.js` no se migraron: usan `registry.js` y `toolDispatcher.js`.
+   Escribirían en Airtable mientras todo lo demás vive en Supabase. Con la
+   arquitectura C WhatsApp lo lleva n8n, así que la ruta puede estar sin uso —
+   pero está viva y escribiría en la base equivocada.
+3. **`whatsapp_chat_historial` sin protección de filas.** Ahora tiene 0 filas
+   (se limpió), así que no hay fuga activa, pero se volverá a llenar de
+   conversaciones reales legibles con la clave pública.
+4. **`resolver_restaurante` y `check_existing_reservation` las puede ejecutar
+   cualquiera** (SECURITY DEFINER, rol `anon`). La segunda revela si un teléfono
+   tiene reserva un día dado.
+
+Pendiente por decisión del usuario: rotar la `service_role` (aplazado otra vez)
+y la pasada de seguridad/autenticación del final del proyecto.
+
+---
+
 ## Sesión 2026-08-08 (noche) · Supabase en producción
 
 La migración está desplegada y verificada. El camino tuvo dos vueltas atrás que
