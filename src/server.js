@@ -36,6 +36,14 @@ app.get("/health", (req, res) => {
     return `ok (${valor.length} car.${sospechoso ? ", OJO: comillas o espacios" : ""})`;
   };
 
+  // Decir "FALTA" no basta cuando el usuario jura haberla puesto: casi siempre
+  // el nombre no es exactamente el esperado (SUPABASE_KEY en vez de
+  // SUPABASE_SERVICE_KEY, minúsculas, un espacio). Listar los NOMBRES de las
+  // que se le parecen convierte "no aparece" en "la tienes, pero se llama así".
+  const parecidas = Object.keys(process.env)
+    .filter((k) => /supa|SUPA/i.test(k))
+    .sort();
+
   res.json({
     ok: true,
     config: {
@@ -45,6 +53,9 @@ app.get("/health", (req, res) => {
       AUTH_JWT_SECRET: presente("AUTH_JWT_SECRET"),
       PUBLIC_BASE_URL: presente("PUBLIC_BASE_URL"),
     },
+    // Solo nombres, nunca valores.
+    variablesConSupabaseEnElNombre: parecidas.length ? parecidas : "ninguna",
+    totalVariables: Object.keys(process.env).length,
   });
 });
 
