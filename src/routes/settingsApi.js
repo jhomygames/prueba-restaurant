@@ -14,7 +14,7 @@
 const express = require("express");
 const crypto = require("crypto");
 const twilio = require("twilio");
-const registry = require("../services/registry");
+const registry = require("../services/repo/restaurantes");
 const vapiAdmin = require("../services/vapiAdmin");
 const connectors = require("../services/connectors");
 const { encrypt, decrypt, mask } = require("../services/secretBox");
@@ -130,13 +130,13 @@ router.put(
   "/api/settings",
   handle(async (req, res) => {
     const fields = {};
-    if (req.body.nombre !== undefined) fields.Nombre = String(req.body.nombre).trim();
-    if (req.body.googleReviewUrl !== undefined) fields.GoogleReviewUrl = req.body.googleReviewUrl;
-    if (req.body.staffWhatsApp !== undefined) fields.StaffWhatsApp = req.body.staffWhatsApp;
+    if (req.body.nombre !== undefined) fields.nombre = String(req.body.nombre).trim();
+    if (req.body.googleReviewUrl !== undefined) fields.google_review_url = req.body.googleReviewUrl;
+    if (req.body.staffWhatsApp !== undefined) fields.staff_whatsapp = req.body.staffWhatsApp;
 
-    if (fields.Nombre === "") return res.status(400).json({ error: "nombre_vacio" });
+    if (fields.nombre === "") return res.status(400).json({ error: "nombre_vacio" });
 
-    const updated = await registry.updateRestaurant(req.restaurant.id, fields);
+    const updated = await registry.actualizarRestaurante(req.restaurant.id, fields);
     res.json(toPublicSettings(updated, req));
   })
 );
@@ -178,7 +178,7 @@ router.put(
 
     if (apiKey !== undefined) {
       // null/"" borra la key propia y vuelve a usar la central del entorno.
-      cambios.VapiApiKeyEnc = apiKey ? encrypt(String(apiKey).trim()) : "";
+      cambios.vapi_api_key_enc = apiKey ? encrypt(String(apiKey).trim()) : "";
     }
 
     // Cada local puede tener su agente en SU PROPIA cuenta de Vapi, así que hay
@@ -203,14 +203,14 @@ router.put(
           });
         }
       }
-      cambios.VapiAssistantId = id;
+      cambios.vapi_assistant_id = id;
     }
 
     if (Object.keys(cambios).length === 0) {
       return res.status(400).json({ error: "nada_que_guardar" });
     }
 
-    const updated = await registry.updateRestaurant(req.restaurant.id, cambios);
+    const updated = await registry.actualizarRestaurante(req.restaurant.id, cambios);
     res.json(toPublicSettings(updated, req));
   })
 );
@@ -333,10 +333,10 @@ router.post(
     const assistant = await vapiAdmin.createAssistant(creds.key, req.restaurant.nombre, base);
     const phone = await vapiAdmin.provisionPhoneNumber(creds.key, assistant.id);
 
-    const updated = await registry.updateRestaurant(req.restaurant.id, {
-      VapiAssistantId: assistant.id,
-      VapiPhoneNumberId: phone?.id || "",
-      VapiTelefono: phone?.number || "",
+    const updated = await registry.actualizarRestaurante(req.restaurant.id, {
+      vapi_assistant_id: assistant.id,
+      vapi_phone_number_id: phone?.id || "",
+      vapi_telefono: phone?.number || "",
     });
 
     res.json({
@@ -433,10 +433,10 @@ router.put(
 
     // Limpiar la configuración propia y volver a la central
     if (!accountSid && !authToken && !from) {
-      const updated = await registry.updateRestaurant(req.restaurant.id, {
-        TwilioAccountSid: "",
-        TwilioAuthTokenEnc: "",
-        TwilioWhatsAppFrom: "",
+      const updated = await registry.actualizarRestaurante(req.restaurant.id, {
+        twilio_account_sid: "",
+        twilio_auth_token_enc: "",
+        twilio_whatsapp_from: "",
       });
       return res.json(toPublicSettings(updated, req));
     }
@@ -465,10 +465,10 @@ router.put(
       ? String(from).trim()
       : `whatsapp:${String(from).trim()}`;
 
-    const updated = await registry.updateRestaurant(req.restaurant.id, {
-      TwilioAccountSid: String(accountSid).trim(),
-      TwilioAuthTokenEnc: encrypt(effectiveToken),
-      TwilioWhatsAppFrom: normalizedFrom,
+    const updated = await registry.actualizarRestaurante(req.restaurant.id, {
+      twilio_account_sid: String(accountSid).trim(),
+      twilio_auth_token_enc: encrypt(effectiveToken),
+      twilio_whatsapp_from: normalizedFrom,
     });
     res.json(toPublicSettings(updated, req));
   })
@@ -510,12 +510,12 @@ router.put(
 
     // Sin proveedor = desconectar y limpiar todo.
     if (!provider) {
-      const updated = await registry.updateRestaurant(req.restaurant.id, {
-        IntegracionProveedor: "",
-        IntegracionApiKeyEnc: "",
-        IntegracionRestauranteId: "",
-        IntegracionWebhookSecretEnc: "",
-        IntegracionActiva: false,
+      const updated = await registry.actualizarRestaurante(req.restaurant.id, {
+        integracion_proveedor: "",
+        integracion_api_key_enc: "",
+        integracion_restaurante_id: "",
+        integracion_webhook_secret_enc: "",
+        integracion_activa: false,
       });
       return res.json(toPublicIntegration(updated, req));
     }
@@ -525,23 +525,23 @@ router.put(
     }
 
     const fields = {
-      IntegracionProveedor: provider,
-      IntegracionActiva: true,
+      integracion_proveedor: provider,
+      integracion_activa: true,
     };
     if (restauranteExternoId !== undefined) {
-      fields.IntegracionRestauranteId = String(restauranteExternoId || "").trim();
+      fields.integracion_restaurante_id = String(restauranteExternoId || "").trim();
     }
     // Si no mandan clave nueva, se conserva la que hubiera.
-    if (apiKey) fields.IntegracionApiKeyEnc = encrypt(String(apiKey).trim());
+    if (apiKey) fields.integracion_api_key_enc = encrypt(String(apiKey).trim());
 
     // El token que autentica los webhooks entrantes lo generamos nosotros una
     // sola vez: es el que el restaurante le entrega a la plataforma.
     const yaTiene = req.restaurant.integracion?.webhookSecretEnc;
     if (!yaTiene) {
-      fields.IntegracionWebhookSecretEnc = encrypt(crypto.randomBytes(32).toString("hex"));
+      fields.integracion_webhook_secret_enc = encrypt(crypto.randomBytes(32).toString("hex"));
     }
 
-    const updated = await registry.updateRestaurant(req.restaurant.id, fields);
+    const updated = await registry.actualizarRestaurante(req.restaurant.id, fields);
     res.json(toPublicIntegration(updated, req));
   })
 );
@@ -556,8 +556,8 @@ router.post(
     if (!req.restaurant.integracion?.proveedor) {
       return res.status(400).json({ error: "sin_integracion" });
     }
-    const updated = await registry.updateRestaurant(req.restaurant.id, {
-      IntegracionWebhookSecretEnc: encrypt(crypto.randomBytes(32).toString("hex")),
+    const updated = await registry.actualizarRestaurante(req.restaurant.id, {
+      integracion_webhook_secret_enc: encrypt(crypto.randomBytes(32).toString("hex")),
     });
     res.json({
       ...toPublicIntegration(updated, req),

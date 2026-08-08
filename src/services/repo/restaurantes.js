@@ -11,6 +11,7 @@
  */
 
 const db = require("../supabaseClient");
+const { decrypt } = require("../secretBox");
 
 const T_RESTAURANTES = "restaurantes";
 const T_USUARIOS = "usuarios";
@@ -35,8 +36,31 @@ function aRestaurante(fila) {
     vapi: {
       assistantId: fila.vapi_assistant_id || "",
       telefono: fila.vapi_telefono || "",
+      // Cifrada. Quien la reciba debe descifrarla con secretBox, nunca usarla
+      // tal cual ni devolverla al navegador.
+      apiKeyEnc: fila.vapi_api_key_enc || "",
     },
-    whatsapp: { numero: fila.whatsapp_numero || "" },
+    whatsapp: {
+      numero: fila.whatsapp_numero || "",
+      accountSid: fila.twilio_account_sid || "",
+      authTokenEnc: fila.twilio_auth_token_enc || "",
+      from: fila.twilio_whatsapp_from || "",
+    },
+    // Se mantiene el nombre `twilio` además de `whatsapp` porque hay código
+    // que ya lo usaba; son la misma información vista desde dos sitios.
+    twilio: {
+      accountSid: fila.twilio_account_sid || "",
+      authTokenEnc: fila.twilio_auth_token_enc || "",
+      whatsappFrom: fila.twilio_whatsapp_from || "",
+    },
+    integracion: {
+      proveedor: fila.integracion_proveedor || "",
+      apiKeyEnc: fila.integracion_api_key_enc || "",
+      restauranteExternoId: fila.integracion_restaurante_id || "",
+      webhookSecretEnc: fila.integracion_webhook_secret_enc || "",
+      activa: fila.integracion_activa === true,
+      ultimaSync: fila.integracion_ultima_sync || "",
+    },
     googleReviewUrl: fila.google_review_url || "",
     staffWhatsApp: fila.staff_whatsapp || "",
     zonaHoraria: fila.zona_horaria || "Europe/Madrid",
@@ -148,6 +172,52 @@ async function actualizarRestaurante(id, cambios) {
   return aRestaurante(fila);
 }
 
+/**
+ * Clave de Vapi efectiva de un local: la suya si la tiene, si no la central.
+ *
+ * Si el local tiene clave guardada pero no se puede descifrar, NO se cae a la
+ * central: eso significaria operar contra otra cuenta de Vapi sin avisar, que
+ * es peor que fallar. Normalmente indica que TENANT_SECRETS_KEY ha cambiado y
+ * hay que volver a pegarla.
+ */
+function vapiApiKey(restaurante) {
+  const enc = restaurante?.vapi?.apiKeyEnc;
+  if (enc) {
+    const clave = decrypt(enc);
+    if (clave) return { key: clave, source: "tenant" };
+    console.error(
+      `[repo] ${restaurante.slug} tiene clave de Vapi pero no se puede descifrar; ` +
+        `NO se usa la central para no operar contra otra cuenta.`
+    );
+    return null;
+  }
+  if (process.env.VAPI_PRIVATE_API_KEY) {
+    return { key: process.env.VAPI_PRIVATE_API_KEY, source: "central" };
+  }
+  return null;
+}
+
+/** Credenciales de Twilio del local, o las centrales del entorno. */
+function twilioCredentials(restaurante) {
+  const w = restaurante?.whatsapp;
+  if (w?.accountSid && w?.authTokenEnc && w?.from) {
+    const authToken = decrypt(w.authTokenEnc);
+    if (authToken) {
+      return { accountSid: w.accountSid, authToken, from: w.from, source: "tenant" };
+    }
+  }
+  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM } = process.env;
+  if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_WHATSAPP_FROM) {
+    return {
+      accountSid: TWILIO_ACCOUNT_SID,
+      authToken: TWILIO_AUTH_TOKEN,
+      from: TWILIO_WHATSAPP_FROM,
+      source: "central",
+    };
+  }
+  return null;
+}
+
 module.exports = {
   todos,
   activos,
@@ -159,6 +229,8 @@ module.exports = {
   crearUsuario,
   actualizarUsuario,
   actualizarRestaurante,
+  vapiApiKey,
+  twilioCredentials,
   invalidar,
   _formas: { aRestaurante, aUsuario },
 };
