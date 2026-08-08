@@ -112,3 +112,42 @@ decisión es suya:
 ```sql
 alter table public.whatsapp_chat_historial enable row level security;
 ```
+
+---
+
+## Cómo terminar la migración (retomar aquí)
+
+La app entera está migrada y probada, pero las rutas volvieron temporalmente a
+Airtable porque **Railway no tiene las credenciales de Supabase**. Sin ellas el
+panel devolvía 500 en el login.
+
+### 1. Añadir en Railway → Variables
+
+```
+SUPABASE_URL=https://klbnjqbzdtmbgfejpidq.supabase.co
+SUPABASE_SERVICE_KEY=<la clave secreta del proyecto>
+```
+
+### 2. Deshacer la vuelta atrás
+
+```bash
+git revert --no-edit 3953d08   # el commit "Volver temporalmente a Airtable"
+cd app && npm run build && cd ..
+git add -A && git commit -m "Rutas de nuevo sobre Supabase" && git push
+```
+
+Eso devuelve `auth.js`, `vapiTools.js` y `staffApi.js` a la versión de Supabase,
+que ya estaba verificada. Nada más hay que tocar: la capa de datos, el agente y
+las notificaciones nunca se revirtieron.
+
+### 3. Comprobar en producción
+
+Login, plano, carta, clientes y agenda. Y una llamada simulada a `/vapi/tools`
+con el assistant real, que debe resolver el restaurante y devolver
+disponibilidad.
+
+### 4. Solo entonces, apuntar Vapi
+
+Empezando por `check_availability`, la única herramienta de solo lectura: si
+algo estuviera mal, lo peor que pasa es que el agente no sepa si hay hueco, no
+que se pierda una reserva.
