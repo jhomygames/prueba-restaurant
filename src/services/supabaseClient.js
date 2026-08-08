@@ -17,7 +17,22 @@
  * el acto en vez de leer o escribir donde no debe.
  */
 
-const TABLAS_SIN_TENANT = new Set(["historial_reservas"]);
+/**
+ * Tablas que NO llevan columna `restaurante`, y por tanto no se filtran por él.
+ *
+ * Son excepciones justificadas una a una, no una lista de comodidad. Cualquier
+ * tabla con datos de un local concreto debe quedar fuera de aquí: estar en esta
+ * lista significa renunciar al aislamiento.
+ *
+ *   restaurantes  — es la tabla que DEFINE los locales; filtrarla por local no
+ *                   tiene sentido.
+ *   usuarios      — el login busca por email antes de saber de qué local es
+ *                   quien entra. Tiene columna `restaurante`, pero como dato,
+ *                   no como filtro: es lo que se usa DESPUÉS para montar la
+ *                   sesión.
+ *   historial_reservas — la traza de n8n, que no distingue local todavía.
+ */
+const TABLAS_SIN_TENANT = new Set(["restaurantes", "usuarios", "historial_reservas"]);
 
 function config() {
   const url = process.env.SUPABASE_URL;
