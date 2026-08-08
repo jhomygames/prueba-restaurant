@@ -1,6 +1,6 @@
 /**
  * Capa de datos del panel: todo va contra la API del backend Express
- * (src/routes/staffApi.js), que a su vez lee/escribe en Supabase.
+ * (src/routes/staffApi.js), que a su vez lee/escribe en Airtable.
  * Airtable es la única base de datos: aquí no hay estado persistente local.
  */
 

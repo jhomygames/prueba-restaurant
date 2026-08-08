@@ -14,7 +14,7 @@ export function CustomersView({ customers }: CustomersViewProps) {
           Clientes Registrados
         </h2>
         <span className="text-[10px] font-mono text-brand-muted bg-brand-surface-high border border-brand-outline px-2 py-0.5 rounded-full">
-          {customers.length} en Supabase
+          {customers.length} en Airtable
         </span>
       </div>
 

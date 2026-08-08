@@ -137,11 +137,6 @@ async function crearUsuario(datos) {
   return db.crear(SIN_TENANT, T_USUARIOS, datos);
 }
 
-/** Cambio de contraseña y poco más. No toca el restaurante del usuario. */
-async function actualizarUsuario(id, cambios) {
-  return db.actualizar(SIN_TENANT, T_USUARIOS, id, cambios);
-}
-
 async function actualizarRestaurante(id, cambios) {
   const fila = await db.actualizar(SIN_TENANT, T_RESTAURANTES, id, cambios);
   invalidar();
@@ -157,7 +152,6 @@ module.exports = {
   usuarioPorEmail,
   usuarioPorId,
   crearUsuario,
-  actualizarUsuario,
   actualizarRestaurante,
   invalidar,
   _formas: { aRestaurante, aUsuario },
