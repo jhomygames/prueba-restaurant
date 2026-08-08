@@ -3,13 +3,13 @@
  *
  * El JWT es la ÚNICA fuente de verdad del tenant en /api/*: lleva el id del
  * restaurante y su baseId, y `requireAuth` los cuelga en `req.restaurant`.
- * Nunca se acepta un restaurante que venga del body o del query: sale del JWT.
+ * Nunca se acepta un baseId/restaurantId que venga del body o del query.
  */
 
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const registry = require("../services/repo/restaurantes");
+const registry = require("../services/registry");
 
 const router = express.Router();
 
@@ -51,7 +51,7 @@ async function requireAuth(req, res, next) {
     if (!token) return res.status(401).json({ error: "no_token" });
 
     const payload = jwt.verify(token, jwtSecret());
-    const restaurant = await registry.porSlug(payload.restaurante);
+    const restaurant = await registry.findById(payload.restaurantId);
     if (!restaurant || !restaurant.activo) {
       return res.status(401).json({ error: "restaurante_inactivo" });
     }
@@ -79,7 +79,7 @@ router.post("/api/auth/login", async (req, res) => {
       return res.status(400).json({ error: "faltan_credenciales" });
     }
 
-    const user = await registry.usuarioPorEmail(email);
+    const user = await registry.findUserByEmail(email);
     // Mismo mensaje para usuario inexistente y contraseña incorrecta: no
     // revelamos qué emails existen.
     const ok = user && user.activo && (await bcrypt.compare(password, user.passwordHash));
@@ -87,7 +87,7 @@ router.post("/api/auth/login", async (req, res) => {
       return res.status(401).json({ error: "credenciales_invalidas" });
     }
 
-    const restaurant = await registry.porSlug(user.restaurante);
+    const restaurant = await registry.findById(user.restauranteId);
     if (!restaurant || !restaurant.activo) {
       return res.status(403).json({ error: "restaurante_inactivo" });
     }
@@ -99,7 +99,7 @@ router.post("/api/auth/login", async (req, res) => {
         userId: user.id,
         email: user.email,
         rol: user.rol,
-        restaurante: restaurant.slug,
+        restaurantId: restaurant.id,
       },
       jwtSecret(),
       { expiresIn: TOKEN_TTL }
@@ -134,13 +134,13 @@ router.post("/api/auth/change-password", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "password_corta", minimo: MIN_PASSWORD_LENGTH });
     }
 
-    const user = await registry.usuarioPorId(req.auth.userId);
+    const user = await registry.findUserById(req.auth.userId);
     if (!user || !(await bcrypt.compare(currentPassword, user.passwordHash))) {
       return res.status(401).json({ error: "password_actual_incorrecta" });
     }
 
     const hash = await bcrypt.hash(String(newPassword), 10);
-    await registry.actualizarUsuario(user.id, { password_hash: hash });
+    await registry.updateUser(user.id, { PasswordHash: hash });
 
     res.json({ ok: true });
   } catch (err) {

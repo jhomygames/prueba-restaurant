@@ -14,8 +14,8 @@
  */
 
 const express = require("express");
-const agente = require("../services/agente");
-const registry = require("../services/repo/restaurantes");
+const { dispatchTool } = require("../services/toolDispatcher");
+const registry = require("../services/registry");
 const { safeCompare } = require("../services/secretBox");
 
 const router = express.Router();
@@ -29,15 +29,13 @@ async function resolveRestaurant(body) {
   const call = body?.message?.call || body?.call || {};
   const assistantId =
     body?.message?.assistant?.id || call.assistantId || call.assistant?.id || body?.assistantId;
-  // El número AL QUE llamó el cliente, como respaldo si el aviso llegara sin
-  // assistant. Vapi lo coloca en sitios distintos según el tipo de evento.
-  const telefono =
-    call.phoneNumber?.number || body?.message?.phoneNumber?.number || body?.phoneNumber?.number;
+  const phoneNumberId =
+    call.phoneNumberId || call.phoneNumber?.id || body?.message?.phoneNumber?.id;
 
-  const found = await registry.porVapi({ assistantId, telefono });
+  const found = await registry.findByVapi({ assistantId, phoneNumberId });
   if (!found) {
     console.error(
-      `[vapiTools] no se pudo identificar el restaurante (assistantId=${assistantId}, telefono=${telefono})`
+      `[vapiTools] no se pudo identificar el restaurante (assistantId=${assistantId}, phoneNumberId=${phoneNumberId})`
     );
   }
   return found;
@@ -97,9 +95,9 @@ router.post("/vapi/tools", async (req, res) => {
         }
       }
       try {
-        const result = await agente.ejecutar(name, args, {
+        const result = await dispatchTool(name, args, {
           customer_phone: customerPhone,
-          restaurante: restaurant,
+          restaurant,
           channel: "voz",
         });
         return { toolCallId: call.id, result: JSON.stringify(result) };
