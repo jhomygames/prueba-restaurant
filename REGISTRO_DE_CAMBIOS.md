@@ -80,6 +80,81 @@ scripts/
 
 ---
 
+## Sesión 2026-08-08 (tarde) · La app entera sobre Supabase
+
+Se completó la migración: escritura, directorio, login, agente, notificaciones y
+panel. **Todo probado en local contra la base real; falta desplegar**, y para eso
+hacen falta dos variables de entorno que solo puede poner el usuario.
+
+### Lo que se construyó
+
+| Pieza | Qué hace |
+|---|---|
+| `repo/escribir.js` | Crear, modificar y cancelar reservas, y la ficha de cliente |
+| `repo/restaurantes.js` | Directorio de locales, resolución por Vapi/WhatsApp y login |
+| `agente.js` | Ejecuta las herramientas de la llamada; sustituye a `toolDispatcher` |
+| `notificaciones.js` | Dispara los avisos de WhatsApp que hasta ahora lanzaba n8n |
+| `staffApi.js` | El panel, reescrito sobre Supabase |
+
+### Decisiones que no se leen en el código
+
+- **Se elige la mesa más pequeña que sirva.** Sentar a dos personas en la de
+  ocho deja el servicio sin sitio para un grupo que llame media hora después.
+- **Al modificar, la reserva original solo se toca si hay dónde ponerla.** Es
+  mejor que el cliente conserve la suya a que la pierda por un cambio que no
+  cupo.
+- **Los alérgenos del cliente se acumulan**, no se sobrescriben: que no
+  mencione su alergia en la segunda reserva no significa que se le haya pasado.
+- **Cada herramienta devuelve el mensaje en castellano listo para decir.** Así
+  la forma de dar un «no» no depende de que el modelo improvise bien ese día.
+- **Un aviso que falla nunca tumba la reserva**, y no se envía nada sin
+  consentimiento ni sin teléfono.
+
+### Dos fallos propios
+
+**El panel se quedó en blanco.** Reutilicé los traductores del agente asumiendo
+que una sola forma servía para los dos. No es así: el agente usa `party_size`,
+`customer_name`; el panel usa `pax`, `customerName`, `seats`, `knownAllergies`.
+Son dos contratos distintos sobre el mismo dato. Lo delató abrir el navegador y
+leer la consola — **las pruebas de API pasaban todas**, porque comprobaban que el
+backend respondía, no que el panel supiera leerlo.
+
+**Los números en palabras salían sin tilde.** Construía las decenas pegando
+«veinti» + la unidad, y tres llevan acento (veintidós, veintitrés, veintiséis).
+El agente los lee en voz alta. Lo cazó la prueba.
+
+### Corrección de algo que ya estaba mal
+
+La resolución de la llamada usaba el `phoneNumberId` de Vapi como respaldo, pero
+ese identificador es interno suyo y **nunca lo tuvimos guardado**: ese respaldo
+no funcionaba. Ahora usa el número al que llamó el cliente, que sí tenemos.
+
+### Verificado
+
+Contra la base real, con los datos de prueba borrados: cliente de datos y
+aislamiento entre locales (en lectura y en escritura), lectura, escritura
+completa, directorio y login (con la contraseña de siempre, migrada tal cual),
+el agente en una conversación entera —fecha hablada, rechazo a las 05:00, grupo
+de 20 al equipo, alta, consulta, cambio, carta sin gluten y anulación—, y el
+panel recorriendo sus cuatro pestañas.
+
+Sin regresiones: el parser de TheFork sigue pasando.
+
+### Estado
+
+Commit `3dea7c1` en `main`. **No desplegado.**
+
+**Bloqueado por el usuario**: hay que añadir en Railway `SUPABASE_URL` y
+`SUPABASE_SERVICE_KEY`. Sin ellas la app falla al arrancar — se comprobó a
+propósito que falla en claro y no en silencio, que es lo correcto, pero
+significa que desplegar antes de configurarlas tumbaría producción.
+
+**Después**: apuntar Vapi a la app empezando por `check_availability` (la única
+herramienta de solo lectura), y jubilar los cinco workflows de reservas sin
+borrarlos.
+
+---
+
 ## Sesión 2026-08-08 · Supabase como base principal, y las mesas por día
 
 Dos frentes: arreglar un fallo que el usuario venía notando, y empezar la
