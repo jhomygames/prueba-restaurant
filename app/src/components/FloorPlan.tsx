@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { Table, TableShape, TableStatus, Reservation, Decoration, DecorationType } from '../types';
+import { Table, TableStatus, Reservation, Decoration, DecorationType } from '../types';
 import { pasesDeMesa, horaDeSalida, pasesQueSePisan } from '../turnos';
+import { TABLE_MODELS, modeloDeMesa } from './TableModels';
 import { Plus, Trash2, RotateCw, Edit3, Check, Eye, HelpCircle, Sprout, Sofa, Columns3, ZoomIn, Maximize2, Minus } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -244,7 +245,7 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
   // Quick state for creating a new table
   const [newTableName, setNewTableName] = useState<string>('');
   const [newTableSeats, setNewTableSeats] = useState<number>(4);
-  const [newTableShape, setNewTableShape] = useState<TableShape>('square');
+  const [newTableModel, setNewTableModel] = useState<string>('cuadrada');
 
   // Quick state for creating a new decoration
   const [newDecName, setNewDecName] = useState<string>('');
@@ -363,17 +364,6 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
     });
   };
 
-  // Fast change shape
-  const handleShapeChange = (table: Table) => {
-    const shapes: TableShape[] = ['square', 'circle', 'rectangle', 'bar'];
-    const currIdx = shapes.indexOf(table.shape);
-    const nextShape = shapes[(currIdx + 1) % shapes.length];
-    onUpdateTable({
-      ...table,
-      shape: nextShape
-    });
-  };
-
   // Add customized table
   const handleCreateNewTable = () => {
     const id = 'table-' + Date.now();
@@ -386,7 +376,10 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
       status: 'free',
       x: 45, // Spawn at the center
       y: 45,
-      shape: newTableShape,
+      // `shape` se mantiene por lo que ya había guardado; lo que manda para
+      // dibujar es `model`.
+      shape: 'square',
+      model: newTableModel,
       rotation: 0
     };
 
@@ -434,30 +427,23 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
     setEditingDecorationId(null);
   };
 
-  // Helpers for table display style
-  const getTableShapeClass = (shape: TableShape) => {
-    switch (shape) {
-      case 'circle':
-        return 'rounded-full aspect-square';
-      case 'rectangle':
-        return 'rounded-lg w-24 h-16';
-      case 'bar':
-        return 'rounded w-10 h-10 border-b-8 border-brand-outline';
-      default: // square
-        return 'rounded-xl w-16 h-16';
-    }
-  };
-
-  const getStatusBorderColor = (table: Table) => {
+  /**
+   * Color de la mesa según su estado.
+   *
+   * Devuelve solo el color del texto porque el mueble se dibuja con
+   * `currentColor`: así el SVG entero —tablero, sillas y respaldos— se tiñe de
+   * una vez y no hay que pasarle el estado a cada figura.
+   */
+  const getStatusColor = (table: Table) => {
     switch (estadoEnLaFecha(table)) {
       case 'occupied':
-        return 'border-red-500/30 text-red-400 bg-red-500/10 shadow-red-500/5 hover:border-red-500/50';
+        return 'text-red-400';
       case 'reserved':
-        return 'border-amber-500/30 text-amber-400 bg-amber-500/10 shadow-amber-500/5 hover:border-amber-500/50';
+        return 'text-amber-400';
       case 'out_of_service':
-        return 'border-zinc-700 text-zinc-600 bg-zinc-800/40 opacity-60 hover:border-zinc-600';
+        return 'text-zinc-600 opacity-60';
       default: // free
-        return 'border-zinc-500/30 text-zinc-400 bg-zinc-500/10 shadow-zinc-500/5 hover:border-zinc-500/50';
+        return 'text-zinc-400';
     }
   };
 
@@ -514,14 +500,15 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
                   className="bg-brand-surface-low border border-brand-outline rounded px-2 py-1 text-xs text-brand-text w-28 focus:outline-none focus:border-brand-primary font-sans"
                 />
                 <select
-                  value={newTableShape}
-                  onChange={(e) => setNewTableShape(e.target.value as TableShape)}
+                  value={newTableModel}
+                  onChange={(e) => setNewTableModel(e.target.value)}
                   className="bg-brand-surface-low border border-brand-outline rounded px-1.5 py-1 text-xs text-brand-text cursor-pointer"
                 >
-                  <option value="square">Cuadrada</option>
-                  <option value="circle">Redonda</option>
-                  <option value="rectangle">Rectangular</option>
-                  <option value="bar">Barra</option>
+                  {TABLE_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
                 </select>
                 <div className="flex items-center gap-1">
                   <span className="text-brand-muted text-[10px]">Asientos:</span>
@@ -605,6 +592,7 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
             const activeRes = getActiveReservationForTable(table.id);
             const isSelected = selectedTableId === table.id;
             const isEditingProperties = editingPropertiesId === table.id;
+            const modelo = modeloDeMesa(table.model, table.shape);
 
             return (
               <div
@@ -615,6 +603,10 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
                   top: `${table.y}%`,
                   transform: `rotate(${table.rotation}deg)`,
                   touchAction: 'none',
+                  // El tamaño lo manda el mueble: una mesa corrida ocupa lo que
+                  // ocupa, y no puede caber en el mismo cuadrado que una de dos.
+                  width: modelo.size.w,
+                  height: modelo.size.h,
                 }}
                 onPointerDown={(e) => handlePointerDown(e, table.id, 'table')}
                 onClick={() => {
@@ -625,24 +617,35 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
                     onSelectTable(table.id);
                   }
                 }}
-                className={`flex flex-col items-center justify-center border-2 cursor-pointer transition-all duration-150 relative shadow-lg ${getTableShapeClass(
-                  table.shape
-                )} ${
+                className={`flex flex-col items-center justify-center cursor-pointer transition-all duration-150 relative ${
                   isSelected
-                    ? 'border-4 border-brand-primary bg-brand-primary/20 shadow-[0_0_20px_rgba(245,158,11,0.2)] text-brand-primary scale-105 z-10'
-                    : getStatusBorderColor(table)
-                } ${isEditMode ? 'hover:scale-105 hover:shadow-brand-primary/5 active:scale-95' : ''}`}
+                    ? 'text-brand-primary scale-105 z-10 drop-shadow-[0_0_10px_rgba(245,158,11,0.35)]'
+                    : getStatusColor(table)
+                } ${isEditMode ? 'hover:scale-105 active:scale-95' : ''}`}
                 id={`dom-table-${table.id}`}
               >
+                {/* El mueble. Va detrás del texto y no recibe clics: de eso se
+                    encarga el contenedor, que es quien conoce el modo edición. */}
+                <svg
+                  viewBox={modelo.viewBox}
+                  preserveAspectRatio="xMidYMid meet"
+                  className="absolute inset-0 w-full h-full pointer-events-none"
+                  aria-hidden="true"
+                >
+                  {modelo.render(table.seats)}
+                </svg>
+
                 {/* Table details (Un-rotated text wrapper) */}
+                {/* Va por encima del mueble y con un velo oscuro detrás: sobre
+                    el tablero dibujado, el texto solo no se leía. */}
                 <div
                   style={{ transform: `rotate(-${table.rotation}deg)` }}
-                  className="flex flex-col items-center justify-center text-center p-1 pointer-events-none"
+                  className="relative z-10 flex flex-col items-center justify-center text-center px-1.5 py-0.5 rounded-md bg-brand-surface-lowest/75 backdrop-blur-[1px] pointer-events-none"
                 >
                   <span className="font-sans font-bold text-[11px] tracking-tight leading-tight text-brand-text">
                     {table.name}
                   </span>
-                  
+
                   {/* Seat icons/number */}
                   <span className="font-mono text-[9px] text-brand-muted/70 font-semibold leading-none mt-0.5">
                     {table.seats} Pax
@@ -937,16 +940,54 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
                       />
                     </div>
 
-                    {/* Shape Toggle */}
+                    {/* Catálogo de muebles. Sustituye al antiguo botón de
+                        "geometría": el mueble ya dice la forma, y además
+                        distingue un reservado de una mesa alta, que antes se
+                        dibujaban igual. */}
                     <div>
-                      <span className="text-[10px] uppercase font-mono text-brand-muted block mb-1.5">Geometría de Mesa</span>
-                      <button
-                        onClick={() => handleShapeChange(table)}
-                        className="w-full flex items-center justify-between bg-brand-surface-low border border-brand-outline rounded px-2.5 py-1.5 text-xs text-brand-text cursor-pointer hover:bg-brand-surface-highest transition-colors"
-                      >
-                        <span className="capitalize">{table.shape === 'square' ? 'Cuadrada' : table.shape === 'circle' ? 'Circular' : table.shape === 'rectangle' ? 'Rectangular' : 'Barra de Stool'}</span>
-                        <RotateCw className="w-3.5 h-3.5 text-brand-primary" />
-                      </button>
+                      <span className="text-[10px] uppercase font-mono text-brand-muted block mb-2 font-bold">
+                        Tipo de Mesa (Vista Cenital)
+                      </span>
+                      <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
+                        {TABLE_MODELS.map((modelo) => {
+                          const elegido = modeloDeMesa(table.model, table.shape).id === modelo.id;
+                          return (
+                            <button
+                              key={modelo.id}
+                              type="button"
+                              onClick={() => onUpdateTable({ ...table, model: modelo.id })}
+                              className={`flex flex-col items-center justify-between p-2 rounded-xl border transition-all text-center cursor-pointer bg-brand-surface-low/50 hover:bg-brand-surface-low ${
+                                elegido
+                                  ? 'border-brand-primary ring-1 ring-brand-primary/50 bg-brand-primary/5'
+                                  : 'border-brand-outline hover:border-brand-primary/40'
+                              }`}
+                              title={modelo.description}
+                            >
+                              <div
+                                className={`w-full h-12 flex items-center justify-center mb-1 ${
+                                  elegido ? 'text-brand-primary' : 'text-zinc-400'
+                                }`}
+                              >
+                                <svg
+                                  viewBox={modelo.viewBox}
+                                  preserveAspectRatio="xMidYMid meet"
+                                  className="w-full h-full"
+                                >
+                                  {/* Con la capacidad real, para ver de una vez
+                                      cómo va a quedar esta mesa concreta. */}
+                                  {modelo.render(table.seats)}
+                                </svg>
+                              </div>
+                              <div className="text-[9px] font-sans font-bold text-brand-text leading-tight">
+                                {modelo.name}
+                              </div>
+                              <div className="text-[7px] text-brand-muted font-sans line-clamp-1 w-full leading-tight mt-0.5">
+                                {modelo.description}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
 
                     {/* Capacity Seats */}

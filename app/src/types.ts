@@ -9,6 +9,11 @@ export interface Table {
   x: number; // position from left in percentage (0 to 100) or grid units
   y: number; // position from top in percentage (0 to 100) or grid units
   shape: TableShape;
+  /**
+   * Mueble con el que se dibuja en el plano (redonda, reservado, barra...).
+   * Vacío = se deduce de `shape`, para las mesas anteriores al catálogo.
+   */
+  model?: string;
   rotation: number; // in degrees (0, 90, 180, 270)
   zone?: string; // Interior / Terraza / Barra (campo Zona en Supabase)
 }

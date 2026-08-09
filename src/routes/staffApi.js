@@ -75,6 +75,9 @@ function aTabla(f) {
     x: f.pos_x == null ? 50 : Number(f.pos_x),
     y: f.pos_y == null ? 50 : Number(f.pos_y),
     shape: f.forma || "square",
+    // Vacío a propósito: el panel lo deduce de `shape` para las mesas de antes
+    // de que existiera el catálogo de muebles.
+    model: f.modelo || "",
     rotation: f.rotacion || 0,
     zone: f.zona || "Interior",
   };
@@ -148,6 +151,7 @@ router.post("/api/tables", manejar(async (req, res) => {
     pos_x: b.x ?? 50,
     pos_y: b.y ?? 50,
     forma: b.shape || "square",
+    modelo: b.model || null,
     rotacion: b.rotation || 0,
   });
   res.status(201).json(aTabla(fila));
@@ -163,6 +167,7 @@ router.patch("/api/tables/:id", manejar(async (req, res) => {
   if (b.x !== undefined) cambios.pos_x = b.x;
   if (b.y !== undefined) cambios.pos_y = b.y;
   if (b.shape !== undefined) cambios.forma = b.shape;
+  if (b.model !== undefined) cambios.modelo = b.model || null;
   if (b.rotation !== undefined) cambios.rotacion = b.rotation;
 
   const fila = await db.actualizar(ctxDe(req), MESAS, req.params.id, cambios);
