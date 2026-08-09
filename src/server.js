@@ -52,7 +52,12 @@ app.get("/health", (req, res) => {
       AIRTABLE_API_KEY: presente("AIRTABLE_API_KEY"),
       AUTH_JWT_SECRET: presente("AUTH_JWT_SECRET"),
       PUBLIC_BASE_URL: presente("PUBLIC_BASE_URL"),
+      VAPI_WEBHOOK_SECRET: presente("VAPI_WEBHOOK_SECRET"),
     },
+    // Mientras esto sea false, /vapi/tools atiende a quien llame. El id del
+    // agente no es un secreto —lo devuelve la propia pantalla de
+    // Configuración—, así que quien lo tenga puede crear y anular reservas.
+    vapiToolsProtegido: Boolean(process.env.VAPI_WEBHOOK_SECRET),
     // Solo nombres, nunca valores.
     variablesConSupabaseEnElNombre: parecidas.length ? parecidas : "ninguna",
     totalVariables: Object.keys(process.env).length,

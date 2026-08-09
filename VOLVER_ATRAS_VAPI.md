@@ -64,6 +64,24 @@ aparte** y el script no las cubre. Para devolverlas a n8n hay que editarlas en
 dashboard.vapi.ai, o adaptar `scripts/vapi-apuntar-tools.js` cambiando el
 destino. Las URLs originales están en la tabla de arriba.
 
+## El secreto de `/vapi/tools`
+
+Las 7 herramientas llevan un secreto compartido (`server.secret`), que Vapi
+manda en la cabecera `x-vapi-secret`. La app solo lo exige cuando existe la
+variable `VAPI_WEBHOOK_SECRET`; sin ella acepta cualquier llamada.
+
+**El orden importa**: primero el secreto en Vapi, después la variable en el
+servidor. Al revés, la app exigiría una cabecera que Vapi todavía no manda y
+rechazaría todas las llamadas mientras tanto.
+
+Para rotarlo (o ponerlo en otro agente):
+
+```bash
+node scripts/vapi-poner-secreto.js <assistantId> --aplicar
+```
+
+Comprobar si está activo: `/health` → `vapiToolsProtegido: true`.
+
 ## Cómo comprobar que sigue bien
 
 ```bash
