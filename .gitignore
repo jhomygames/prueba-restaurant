@@ -8,3 +8,6 @@ CREDENCIALES_INICIALES.txt
 
 # Configuracion volcada de la cuenta de Vapi (no es del proyecto)
 respaldos-vapi/
+
+# Copias de datos de produccion
+respaldos/

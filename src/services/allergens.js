@@ -27,16 +27,48 @@
 // Prefijos desde principio de palabra: "crustace" cubre "crustáceos",
 // "vegetarian" cubre "vegetariana". Los acentos se quitan antes de comparar.
 const REGLAS = [
-  { alergenos: ["Gluten"], claves: ["gluten", "trigo", "celiac", "espelta", "cebada", "centeno", "harina"] },
+  // OJO con los prefijos: casan desde principio de palabra, así que "torta"
+  // casaría con "tortilla" (que aquí es de maíz) y "tarta" con "tártara". Por
+  // eso no están: en su lugar van palabras que no se solapan con nada.
+  {
+    alergenos: ["Gluten"],
+    claves: [
+      "gluten", "trigo", "celiac", "espelta", "cebada", "centeno", "harina",
+      // Rebozados y empanados. "empanad" NO está: la empanada venezolana es de
+      // maíz, y marcarla con gluten sería una alarma falsa en media carta.
+      "empaniz", "rebozad", "crujiente", "panko",
+      // Bollería y masas
+      "bizcocho", "brownie", "galleta", "hojaldre", "pasta ",
+      // El pan de la hamburguesa
+      "hamburgues", "burger",
+      // Cebada: la cerveza y la malta la llevan
+      "cerveza", "malta", "birra",
+    ],
+  },
   // "Marisco" coloquial = crustáceos + moluscos. Marcar ambos es la opción segura.
   { alergenos: ["Crustáceos", "Moluscos"], claves: ["marisco"] },
   { alergenos: ["Crustáceos"], claves: ["crustace", "gamba", "langostino", "cigala", "cangrejo", "langosta", "bogavante", "camaron", "necora", "percebe"] },
   { alergenos: ["Moluscos"], claves: ["molusco", "mejillon", "almeja", "calamar", "chipiron", "pulpo", "ostra", "berberecho", "vieira", "sepia", "zamburi"] },
-  { alergenos: ["Pescado"], claves: ["pescado", "anchoa", "boqueron", "atun", "merluza", "salmon", "bacalao", "sardina", "lubina", "dorada", "rape", "trucha", "anguila"] },
-  { alergenos: ["Huevos"], claves: ["huevo", "clara de", "yema"] },
+  { alergenos: ["Pescado"], claves: ["pescado", "pescaito", "anchoa", "boqueron", "atun", "merluza", "salmon", "bacalao", "sardina", "lubina", "dorada", "rape", "trucha", "anguila", "cazon"] },
+  { alergenos: ["Huevos"], claves: ["huevo", "clara de", "yema", "mayonesa", "tartara", "merengue", "alioli"] },
   { alergenos: ["Cacahuetes"], claves: ["cacahuete", "cacahuate", "mani"] },
   { alergenos: ["Soja"], claves: ["soja", "soya", "tofu", "edamame"] },
-  { alergenos: ["Lácteos"], claves: ["lactosa", "lacteo", "leche", "queso", "nata", "mantequilla", "yogur", "crema de leche"] },
+  {
+    alergenos: ["Lácteos"],
+    claves: [
+      "lactosa", "lacteo", "leche", "nata", "mantequilla", "yogur", "crema de leche",
+      // "ques" cubre queso, quesos, quesito y quesillo de una vez
+      "ques", "cheddar", "parmesano", "mozzarella", "guayanes", "llanero",
+      "helado", "merengue", "bechamel",
+      // Cafés que llevan leche aunque su nombre no la nombre. Un intolerante
+      // que pide un cortado tiene el mismo problema que con un vaso de leche.
+      "capuccino", "capuchino", "cortado", "manchado", "bombon", "latte",
+    ],
+  },
+  // El tequeño es masa de trigo rellena de queso: los dos a la vez.
+  { alergenos: ["Gluten", "Lácteos"], claves: ["teque"] },
+  // El vino declara sulfitos por norma.
+  { alergenos: ["Sulfitos"], claves: ["vino", "verdejo", "rioja", "crianza", "tinto de verano"] },
   { alergenos: ["Frutos de cáscara"], claves: ["fruto seco", "frutos seco", "nuez", "nueces", "almendra", "avellana", "pistacho", "anacardo", "cascara", "pinon", "macadamia"] },
   { alergenos: ["Apio"], claves: ["apio"] },
   { alergenos: ["Mostaza"], claves: ["mostaza"] },
