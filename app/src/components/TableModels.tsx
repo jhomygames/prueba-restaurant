@@ -407,6 +407,33 @@ export const TABLE_MODELS: TableModelInfo[] = [
   },
 ];
 
+/**
+ * Siluetas de los muebles que no son mesas (sofá, barra).
+ *
+ * Se dibujan en vez de usar un icono al uso porque un icono cuadrado metido en
+ * una barra de 260×35 sale diminuto y centrado, con el mueble vacío alrededor.
+ * Con `preserveAspectRatio="none"` la silueta se estira hasta ocupar el hueco,
+ * así que el tamaño que le dé el usuario en el plano significa algo.
+ */
+export const SiluetaSofa: React.FC = () => (
+  <svg viewBox="0 0 100 45" preserveAspectRatio="none" className="w-full h-full">
+    {/* Respaldo arriba y reposabrazos a los lados: es lo que hace que se lea
+        como un sofá y no como un rectángulo cualquiera. */}
+    <rect x={1} y={1} width={98} height={43} rx={6} {...asiento} />
+    <rect x={1} y={1} width={98} height={11} rx={5} {...tablero} />
+    <rect x={1} y={1} width={11} height={43} rx={5} {...tablero} />
+    <rect x={88} y={1} width={11} height={43} rx={5} {...tablero} />
+  </svg>
+);
+
+export const SiluetaBarra: React.FC = () => (
+  <svg viewBox="0 0 100 20" preserveAspectRatio="none" className="w-full h-full">
+    <rect x={0.8} y={0.8} width={98.4} height={18.4} rx={2} {...tablero} />
+    {/* El canto por el que se atiende, marcado más grueso. */}
+    <path d="M 0.8 19.2 H 99.2" stroke="currentColor" strokeWidth={2.4} opacity={0.6} />
+  </svg>
+);
+
 /** Las formas de siempre, traducidas al mueble que más se les parece. */
 const DESDE_FORMA: Record<TableShape, string> = {
   square: 'cuadrada',

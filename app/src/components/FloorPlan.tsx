@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { Table, TableStatus, Reservation, Decoration, DecorationType } from '../types';
 import { pasesDeMesa, horaDeSalida, pasesQueSePisan } from '../turnos';
-import { TABLE_MODELS, modeloDeMesa } from './TableModels';
-import { Plus, Trash2, RotateCw, Edit3, Check, Eye, HelpCircle, Sprout, Sofa, Columns3, ZoomIn, Maximize2, Minus } from 'lucide-react';
+import { TABLE_MODELS, modeloDeMesa, SiluetaSofa, SiluetaBarra } from './TableModels';
+import { Plus, Trash2, RotateCw, Edit3, Check, Eye, HelpCircle, ZoomIn, Maximize2, Minus } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export interface PlantModelInfo {
@@ -827,47 +827,38 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
                     setEditingPropertiesId(null); // Deselect table
                   }
                 }}
-                className={`flex flex-col items-center justify-center cursor-pointer transition-all duration-150 relative shadow-md select-none overflow-hidden
-                  ${dec.type === 'wall' ? 'bg-zinc-700/60 border border-zinc-500/80 rounded' : ''}
-                  ${dec.type === 'plant' ? 'bg-emerald-950/40 border border-emerald-600/40 rounded-full' : ''}
-                  ${dec.type === 'furniture' ? 'bg-amber-950/30 border border-amber-800/40 rounded-xl' : ''}
-                  ${dec.type === 'bar_counter' ? 'bg-slate-800 border-2 border-slate-700 rounded-lg shadow-inner' : ''}
-                  ${isSelected && isEditMode ? 'ring-2 ring-brand-primary border-brand-primary scale-105 z-20 shadow-[0_0_15px_rgba(245,158,11,0.4)]' : ''}
+                /* Sin caja ni etiqueta: en un plano, el mueble se reconoce por
+                   su silueta, igual que las mesas. El nombre sigue estando en
+                   el `title`, que es donde no estorba. El muro sí es un bloque
+                   macizo, porque eso es exactamente lo que representa. */
+                className={`flex items-center justify-center cursor-pointer transition-all duration-150 relative select-none
+                  ${dec.type === 'wall' ? 'bg-zinc-600/70 rounded-[2px]' : ''}
+                  ${isSelected && isEditMode ? 'ring-2 ring-brand-primary rounded-lg scale-105 z-20' : ''}
                   ${isEditMode ? 'hover:scale-105' : ''}
                 `}
                 title={dec.name}
               >
-                {/* Visual indicator / Icon */}
-                <div
-                  style={{ transform: `rotate(-${dec.rotation}deg)` }}
-                  className="flex flex-col items-center justify-center text-center p-1 pointer-events-none text-brand-text/90 w-full h-full relative"
-                >
+                {/* La silueta gira CON el mueble. Antes se contrarrotaba para
+                    mantener el nombre derecho; sin nombre, contrarrotar solo
+                    conseguía que un sofá apaisado saliera de canto. */}
+                <div className="w-full h-full flex items-center justify-center pointer-events-none">
                   {dec.type === 'plant' && (() => {
                     const model = PLANT_MODELS.find(m => m.id === dec.plantModel) || PLANT_MODELS[0];
                     return (
-                      <div className="w-full h-full absolute inset-0 p-1 flex items-center justify-center">
-                        {model.render("text-emerald-400")}
+                      <div className="w-full h-full flex items-center justify-center">
+                        {model.render('text-emerald-400/90')}
                       </div>
                     );
                   })()}
                   {dec.type === 'furniture' && (
-                    <Sofa className="w-5 h-5 text-amber-400/90 z-10" />
-                  )}
-                  {dec.type === 'bar_counter' && (
-                    <Columns3 className="w-5 h-5 text-slate-400 z-10" />
-                  )}
-                  {dec.type === 'wall' && (
-                    <span className="w-full h-1 bg-zinc-400/40 rounded z-10" />
-                  )}
-                  
-                  {/* Name */}
-                  {dec.type !== 'wall' && (
-                    <span className="text-[8px] font-mono tracking-tight text-brand-muted/90 font-bold truncate max-w-full px-1 mt-0.5 z-10 bg-brand-surface-high/80 rounded border border-brand-outline/25 shadow-sm">
-                      {dec.name}
+                    <span className="w-full h-full text-amber-400/85">
+                      <SiluetaSofa />
                     </span>
                   )}
-                  {dec.type === 'wall' && (
-                    <span className="text-[7px] font-mono font-bold text-zinc-400 z-10">Muro</span>
+                  {dec.type === 'bar_counter' && (
+                    <span className="w-full h-full text-slate-300/85">
+                      <SiluetaBarra />
+                    </span>
                   )}
                 </div>
               </div>
