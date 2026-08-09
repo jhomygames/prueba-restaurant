@@ -130,6 +130,38 @@ Lo que no, por orden de gravedad:
 Pendiente por decisión del usuario: rotar la `service_role` (aplazado otra vez)
 y la pasada de seguridad/autenticación del final del proyecto.
 
+### La reserva de prueba que salió sin mesa
+
+El usuario hizo una llamada de prueba (RES-997748-032, Marcos, 10-08 a las 21:00)
+y la reserva se guardó **sin mesa asignada**. No es un fallo de la app: **esa
+reserva no la escribió la app**.
+
+La prueba está en los datos. `crearReserva` siempre rellena `origen`, y cuando no
+hay mesa libre **rechaza** la reserva (`sin_mesa`) en vez de guardarla coja. La
+fila tiene `origen: null` y `mesa_id: null`, combinación que nuestro código no
+puede producir. Mirando el histórico entero: **ninguna de las 12 reservas tiene
+mesa**, porque todas las escribió n8n, que nunca tuvo lógica de asignación — el
+vacío exacto que motivó la arquitectura C.
+
+La llamada se hizo antes de sincronizar el asistente, así que fue a n8n.
+
+**Verificación pendiente:** repetir la llamada y comprobar que la reserva sale
+con mesa y `origen: "voz"`. Si vuelve a salir sin mesa, n8n sigue en el camino de
+la llamada y hay que sacarlo.
+
+**A decidir:** la app ahora rechaza la reserva si no hay mesa libre. Es más
+correcto que guardarla sin asignar, pero es un cambio de comportamiento.
+
+### Pedido para la próxima sesión (plano por turnos)
+
+1. **Ver el plano por turno** (comida / cena), no solo por día: hoy se mezclan
+   las reservas de ambos servicios.
+2. **Varios pases por mesa en el mismo turno.** Una mesa se ocupa dos o tres
+   veces en una cena, y el plano no lo refleja: hace falta ver que una mesa tiene
+   otra reserva más tarde. Parte de `duracion_min` (el tiempo estimado para
+   liberar la mesa), que hoy se guarda **siempre a null** — habrá que darle valor
+   por defecto antes de poder calcular los pases.
+
 ---
 
 ## Sesión 2026-08-08 (noche) · Supabase en producción
