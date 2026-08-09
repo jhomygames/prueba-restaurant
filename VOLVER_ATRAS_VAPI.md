@@ -5,7 +5,7 @@ devolver el teléfono a como estaba (atendido por los flujos de n8n).
 
 ## Qué se cambió el 2026-08-09
 
-El teléfono **+34911676905** lo atiende el agente **"Lumos Automation Marta"**
+El teléfono **+34911676905** lo atiende el agente **"Lumos Automation Marta (enlazado)"**
 (`b82581ed-3c44-4eca-8629-643abdc26e86`). Su guion **no se tocó**: sigue siendo
 el mismo que hablan los clientes. Lo único que cambió es a dónde llaman sus
 herramientas.
@@ -31,6 +31,14 @@ También en Supabase, tabla `restaurantes`:
 El `server.url` del **número** (`…/webhook/vapi-assistant-request`) se dejó
 como estaba a propósito: por ahí le llegan a n8n los avisos de fin de llamada,
 y quitarlo podría dejar sin enviar la petición de reseña.
+
+El sufijo **"(enlazado)"** del nombre marca cuál es el agente que atiende de
+verdad y ya escribe en la app. Es solo la etiqueta del panel de Vapi: el
+cliente nunca la oye. Si algún día se vuelve atrás, quítalo:
+
+```bash
+node scripts/vapi-renombrar.js b82581ed-3c44-4eca-8629-643abdc26e86 "Lumos Automation Marta"
+```
 
 ## Cómo volver atrás
 
