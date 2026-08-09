@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Table, TableShape, TableStatus, Reservation, Decoration, DecorationType } from '../types';
+import { pasesDeMesa, horaDeSalida, pasesQueSePisan } from '../turnos';
 import { Plus, Trash2, RotateCw, Edit3, Check, Eye, HelpCircle, Sprout, Sofa, Columns3, ZoomIn, Maximize2, Minus } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -195,6 +196,8 @@ interface FloorPlanProps {
   selectedDate?: string;
   currentTime?: Date;
   isToleranceEnabled?: boolean;
+  /** Minutos que se estima que dura un servicio, para calcular los pases. */
+  defaultSeatedDuration?: number;
 }
 
 export const FloorPlan: React.FC<FloorPlanProps> = ({
@@ -213,6 +216,7 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
   selectedDate = new Date().toISOString().split('T')[0],
   currentTime = new Date(),
   isToleranceEnabled = true,
+  defaultSeatedDuration = 120,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -245,11 +249,21 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
   const [newDecWidth, setNewDecWidth] = useState<number>(40);
   const [newDecHeight, setNewDecHeight] = useState<number>(40);
 
-  // Find active reservation for a table (specifically today's active bookings)
+  /**
+   * Todos los pases de una mesa en la fecha que se mira, en orden de hora.
+   *
+   * Una mesa no se ocupa una vez por servicio: entra un grupo a las ocho y otro
+   * a las diez y media. Enseñar solo el primero deja al camarero creyendo que
+   * la mesa queda libre el resto de la noche.
+   *
+   * Las reservas ya vienen filtradas por turno desde arriba.
+   */
+  const pasesDeLaMesa = (tableId: string): Reservation[] =>
+    pasesDeMesa(reservations, tableId, selectedDate, 'dia');
+
+  // El pase que toca ahora: el primero que aún no ha terminado.
   const getActiveReservationForTable = (tableId: string): Reservation | undefined => {
-    return reservations.find(
-      r => r.tableId === tableId && r.date === selectedDate && r.status !== 'completed' && r.status !== 'cancelled'
-    );
+    return pasesDeLaMesa(tableId)[0];
   };
 
   /**
@@ -720,6 +734,42 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
                     </div>
                   )}
                 </div>
+
+                {/* Pases siguientes: la mesa vuelve a estar reservada más tarde.
+                    Sin esto, el camarero cree que queda libre el resto del
+                    servicio y la ofrece a quien entra por la puerta. */}
+                {!isEditMode && (() => {
+                  const pases = pasesDeLaMesa(table.id);
+                  if (pases.length < 2) return null;
+
+                  const siguientes = pases.slice(1);
+                  const choques = pasesQueSePisan(pases, defaultSeatedDuration);
+                  const seSolapan = choques.length > 0;
+
+                  return (
+                    <span
+                      style={{ transform: `rotate(-${table.rotation}deg)` }}
+                      className={`absolute -bottom-1.5 -right-1.5 rounded-full min-w-[15px] h-[15px] px-1 flex items-center justify-center z-10 shadow-md font-mono font-bold text-[9px] border ${
+                        seSolapan
+                          ? 'bg-red-600 text-white border-red-400 animate-pulse'
+                          : 'bg-brand-tertiary/90 text-brand-surface border-brand-tertiary'
+                      }`}
+                      title={
+                        (seSolapan
+                          ? '¡Se pisan! La siguiente entra antes de que la anterior termine.\n\n'
+                          : `${pases.length} pases en esta mesa.\n\n`) +
+                        pases
+                          .map(
+                            (p) =>
+                              `${p.time}–${horaDeSalida(p, defaultSeatedDuration)}  ${p.customerName} (${p.pax}p)`
+                          )
+                          .join('\n')
+                      }
+                    >
+                      {seSolapan ? '!' : `+${siguientes.length}`}
+                    </span>
+                  );
+                })()}
 
                 {/* Table selection helper */}
                 {isSelected && !isEditMode && (

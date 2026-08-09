@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Table, Reservation, NotificationLog, TableStatus, Decoration } from './types';
+import { VistaTurno, ETIQUETA_TURNO, esDelTurno, estaViva, turnoActual } from './turnos';
 import { INITIAL_DECORATIONS } from './data';
 import * as api from './api';
 import { Customer, Dish, Session } from './api';
@@ -95,6 +96,11 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     return new Date().toISOString().split('T')[0];
   });
+
+  // Turno que se está mirando. Arranca en el que toca ahora mismo: al abrir el
+  // panel a media tarde, lo que interesa es la cena, no lo que pasó al mediodía.
+  const [selectedShift, setSelectedShift] = useState<VistaTurno>(() => turnoActual());
+
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
 
   useEffect(() => {
@@ -654,11 +660,15 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
   // del calendario, aparecieran mesas ocupadas que en realidad lo estaban hace
   // días. Para el resto de fechas, lo único que ocupa una mesa es una reserva.
   const hoyISO = new Date().toISOString().split('T')[0];
+
+  // Las reservas del turno que se está mirando. Un servicio no dice nada del
+  // otro: la mesa reservada a las dos de la tarde está libre para la cena.
+  const reservasDelTurno = reservations.filter(r => esDelTurno(r, selectedShift));
+
   const estadoMesaEnFecha = (t: Table): TableStatus => {
     if (t.status === 'out_of_service') return 'out_of_service';
-    const conReserva = reservations.some(
-      r => r.tableId === t.id && r.date === selectedDate &&
-           r.status !== 'completed' && r.status !== 'cancelled'
+    const conReserva = reservasDelTurno.some(
+      r => r.tableId === t.id && r.date === selectedDate && estaViva(r)
     );
     if (conReserva) return 'reserved';
     return selectedDate === hoyISO ? t.status : 'free';
@@ -681,7 +691,11 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
             exit={{ opacity: 0, y: -20, scale: 0.9 }}
             className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-4 pointer-events-none"
           >
-            <div className="bg-brand-surface-high border-2 border-brand-primary rounded-xl p-4 shadow-2xl flex gap-3 pointer-events-auto">
+            {/* Sin `pointer-events-auto`: el aviso no tiene nada que pulsar, y
+                al capturar el ratón dejaba muerta la barra de arriba durante
+                los cinco segundos que dura. Cambiar la fecha y querer cambiar
+                el turno justo después es lo más normal del mundo. */}
+            <div className="bg-brand-surface-high border-2 border-brand-primary rounded-xl p-4 shadow-2xl flex gap-3">
               <div className="mt-0.5 shrink-0 bg-brand-primary/10 p-2 rounded-lg border border-brand-primary/20">
                 {bannerAlert.type === 'incoming_call' ? (
                   <PhoneCall className="w-5 h-5 text-brand-secondary animate-pulse" />
@@ -773,6 +787,25 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
                 HOY
               </button>
             )}
+
+            {/* Turno: un día son dos servicios distintos, y mezclarlos hace que
+                el plano enseñe como ocupadas mesas que están libres. */}
+            <div className="flex bg-brand-surface border border-brand-outline rounded-lg p-0.5 ml-1">
+              {(['comida', 'cena', 'dia'] as VistaTurno[]).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setSelectedShift(t)}
+                  className={`px-2 py-0.5 rounded-md text-[9px] font-mono font-bold transition-colors cursor-pointer ${
+                    selectedShift === t
+                      ? 'bg-brand-primary/20 text-brand-primary'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                  title={`Ver el plano de: ${ETIQUETA_TURNO[t]}`}
+                >
+                  {t === 'dia' ? 'TODO' : ETIQUETA_TURNO[t].toUpperCase()}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -1194,7 +1227,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
             <div className="flex-1 h-full min-h-[450px]">
               <FloorPlan
                 tables={tables}
-                reservations={reservations}
+                reservations={reservasDelTurno}
                 selectedTableId={selectedTableId}
                 onSelectTable={handleSelectTable}
                 isEditMode={isEditMode}
@@ -1208,6 +1241,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
                 selectedDate={selectedDate}
                 currentTime={currentTime}
                 isToleranceEnabled={isToleranceEnabled}
+                defaultSeatedDuration={defaultSeatedDuration}
               />
             </div>
           ) : activeTab === 'calendar' ? (
