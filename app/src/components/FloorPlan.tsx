@@ -198,6 +198,8 @@ interface FloorPlanProps {
   isToleranceEnabled?: boolean;
   /** Minutos que se estima que dura un servicio, para calcular los pases. */
   defaultSeatedDuration?: number;
+  /** Abre la ficha de una reserva para cambiarle hora o mesa. */
+  onEditReservation?: (reserva: Reservation) => void;
 }
 
 export const FloorPlan: React.FC<FloorPlanProps> = ({
@@ -217,6 +219,7 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
   currentTime = new Date(),
   isToleranceEnabled = true,
   defaultSeatedDuration = 120,
+  onEditReservation,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -746,28 +749,45 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
                   const choques = pasesQueSePisan(pases, defaultSeatedDuration);
                   const seSolapan = choques.length > 0;
 
+                  // Al pulsar se abre la reserva que hay que mover: en un choque
+                  // es la que llega tarde, y si no, simplemente la siguiente. Es
+                  // el atajo para cambiarle la hora o pasarla a otra mesa sin
+                  // tener que ir a buscarla a la agenda.
+                  const aEditar = seSolapan ? choques[0].despues : siguientes[0];
+
+                  const detalle =
+                    (seSolapan
+                      ? '¡Se pisan! La siguiente entra antes de que la anterior termine.\n\n'
+                      : `${pases.length} pases en esta mesa.\n\n`) +
+                    pases
+                      .map(
+                        (p) =>
+                          `${p.time}–${horaDeSalida(p, defaultSeatedDuration)}  ${p.customerName} (${p.pax}p)`
+                      )
+                      .join('\n') +
+                    (onEditReservation ? `\n\nPulsa para editar la de ${aEditar.customerName}.` : '');
+
                   return (
-                    <span
+                    <button
+                      type="button"
                       style={{ transform: `rotate(-${table.rotation}deg)` }}
-                      className={`absolute -bottom-1.5 -right-1.5 rounded-full min-w-[15px] h-[15px] px-1 flex items-center justify-center z-10 shadow-md font-mono font-bold text-[9px] border ${
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        // Sin esto, el clic también seleccionaría la mesa por debajo.
+                        e.stopPropagation();
+                        onEditReservation?.(aEditar);
+                      }}
+                      className={`absolute -bottom-1.5 -right-1.5 rounded-full min-w-[16px] h-[16px] px-1 flex items-center justify-center z-20 shadow-md font-mono font-bold text-[9px] border transition-transform ${
+                        onEditReservation ? 'cursor-pointer hover:scale-125' : 'cursor-default'
+                      } ${
                         seSolapan
                           ? 'bg-red-600 text-white border-red-400 animate-pulse'
                           : 'bg-brand-tertiary/90 text-brand-surface border-brand-tertiary'
                       }`}
-                      title={
-                        (seSolapan
-                          ? '¡Se pisan! La siguiente entra antes de que la anterior termine.\n\n'
-                          : `${pases.length} pases en esta mesa.\n\n`) +
-                        pases
-                          .map(
-                            (p) =>
-                              `${p.time}–${horaDeSalida(p, defaultSeatedDuration)}  ${p.customerName} (${p.pax}p)`
-                          )
-                          .join('\n')
-                      }
+                      title={detalle}
                     >
                       {seSolapan ? '!' : `+${siguientes.length}`}
-                    </span>
+                    </button>
                   );
                 })()}
 

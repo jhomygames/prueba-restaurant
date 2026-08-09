@@ -355,6 +355,15 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
     }, 5000);
   };
 
+  /** Cierra el aviso flotante ya, sin esperar a que se cumplan sus cinco segundos. */
+  const cerrarBanner = () => {
+    if (bannerTimer.current) {
+      clearTimeout(bannerTimer.current);
+      bannerTimer.current = null;
+    }
+    setBannerAlert(null);
+  };
+
   const handleDismissNotification = (id: string) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
   };
@@ -705,18 +714,35 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
                   <Bell className="w-5 h-5 text-brand-primary" />
                 )}
               </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-sans font-bold text-xs text-brand-text uppercase tracking-wider">
-                    {bannerAlert.title}
-                  </h4>
-                  <span className="text-[9px] font-mono bg-brand-primary/10 border border-brand-primary/30 px-1 rounded text-brand-primary font-bold">
-                    NOTIFICACIÓN PUSH
-                  </span>
-                </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="font-sans font-bold text-xs text-brand-text uppercase tracking-wider">
+                  {bannerAlert.title}
+                </h4>
                 <p className="text-xs text-brand-muted mt-1 leading-relaxed">
                   {bannerAlert.msg}
                 </p>
+              </div>
+
+              {/* Ver y Cerrar. Antes había que esperar cinco segundos a que se
+                  fuera solo, que es justo lo que molesta de un aviso. */}
+              <div className="flex flex-col gap-1 shrink-0 self-center pointer-events-auto">
+                <button
+                  onClick={() => {
+                    cerrarBanner();
+                    if (!isNotificationsOpen) handleToggleNotifications();
+                  }}
+                  className="bg-brand-primary/15 hover:bg-brand-primary/25 text-brand-primary border border-brand-primary/30 rounded-md px-2.5 py-1 text-[10px] font-mono font-bold transition-colors cursor-pointer"
+                  title="Abrir el centro de notificaciones"
+                >
+                  VER
+                </button>
+                <button
+                  onClick={cerrarBanner}
+                  className="bg-brand-surface hover:bg-brand-outline/40 text-brand-muted border border-brand-outline rounded-md px-2.5 py-1 text-[10px] font-mono font-bold transition-colors cursor-pointer"
+                  title="Cerrar el aviso"
+                >
+                  CERRAR
+                </button>
               </div>
             </div>
           </motion.div>
@@ -1242,6 +1268,11 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
                 currentTime={currentTime}
                 isToleranceEnabled={isToleranceEnabled}
                 defaultSeatedDuration={defaultSeatedDuration}
+                onEditReservation={(res) => {
+                  setEditingReservation(res);
+                  setSelectedTableId(res.tableId || null);
+                  setIsBookingModalOpen(true);
+                }}
               />
             </div>
           ) : activeTab === 'calendar' ? (
