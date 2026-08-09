@@ -130,6 +130,38 @@ Lo que no, por orden de gravedad:
 Pendiente por decisión del usuario: rotar la `service_role` (aplazado otra vez)
 y la pasada de seguridad/autenticación del final del proyecto.
 
+## 2026-08-09 — El agente de voz pasa a escribir en la app
+
+Resuelto el misterio de las reservas sin mesa. **El teléfono nunca pasaba por
+nuestro agente.** El número +34911676905 estaba atado a otro agente, "Lumos
+Automation Marta", cuyas herramientas apuntaban a n8n. Sincronizamos el agente
+equivocado: el nuestro estaba perfecto, pero nadie le llamaba.
+
+Marta tiene un guion escrito y afinado durante meses, y el usuario quiso
+conservarlo. Así que **no se tocó ni una coma**: se repuntaron sus 7
+herramientas de n8n a `/vapi/tools`, y se añadió `dialectoMarta.js`, que
+traduce su vocabulario (`saveReservation`/`fecha`) al nuestro
+(`create_reservation`/`date`) y devuelve las respuestas con los campos que su
+guion lee (`disponible`, `fecha_hablada`, `cliente_conocido`, `GRUPO_GRANDE`).
+
+De paso aparecieron dos cosas rotas de antes:
+
+- **`modifyReservation` no tenía destino.** Era una herramienta de tipo función
+  sin URL: cuando Marta intentaba modificar una reserva, la llamada no iba a
+  ninguna parte. Ahora funciona.
+- **`find_reservation` no buscaba por nombre**, aunque su guion lo usa cuando el
+  teléfono no encuentra nada — justo cuando el cliente se queda sin salida.
+
+Verificado en producción de punta a punta: reserva creada **con mesa asignada**
+y "celiaco" convertido en el alérgeno "Gluten". La prueba se anuló al terminar.
+
+Protección añadida: `vapi_guion_externo` en `restaurantes`. El botón de
+sincronizar guion del panel habría sustituido el guion de Marta por la
+plantilla genérica, y Vapi no guarda versiones anteriores. Ahora se niega.
+
+Punto de retorno documentado en `VOLVER_ATRAS_VAPI.md`, con respaldo completo
+de la cuenta de Vapi en `respaldos-vapi/` (fuera de git).
+
 ### La reserva de prueba que salió sin mesa
 
 El usuario hizo una llamada de prueba (RES-997748-032, Marcos, 10-08 a las 21:00)
