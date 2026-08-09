@@ -130,6 +130,41 @@ Lo que no, por orden de gravedad:
 Pendiente por decisión del usuario: rotar la `service_role` (aplazado otra vez)
 y la pasada de seguridad/autenticación del final del proyecto.
 
+## 2026-08-09 — El plano: turnos, pases y muebles dibujados
+
+**Turnos.** Un día no es un bloque, son dos servicios. La mesa reservada a las
+dos de la tarde salía ocupada también para la cena, que es justo cuando está
+libre. Selector Comida/Cena/Todo que arranca en el turno que toca a esa hora.
+
+**Pases por mesa.** Dentro de un turno una mesa se ocupa varias veces. Ahora lo
+marca: `+N` si hay más pases después, y `!` en rojo si se pisan (el siguiente
+entra antes de que acabe el anterior). Al pulsarlo se abre la reserva que hay
+que mover — en un choque, la que llega tarde. La hora de salida sale de la
+duración configurada del servicio, que ya existía en Ajustes.
+
+**Muebles.** Once modelos vistos desde arriba (redonda, cuadrada, rectangular,
+ovalada, corrida, reservado, rincón, esquina corrida, esquina mixta, alta,
+barra), al convenio de los planos de arquitecto. Las sillas salen de la
+capacidad: cambiar el aforo cambia el dibujo. El color lo pone el estado, vía
+`currentColor`. La columna `modelo` admite vacío, así que las 17 mesas que ya
+existían se deducen de su forma y no hubo que tocarlas.
+
+**Decoraciones.** Plantas, sofás y barras pasan a ser silueta pura: sin nombre
+encima (sigue en el tooltip) y sin la caja de color que las enmarcaba. Sofá y
+barra dejan de ser iconos de librería y se dibujan como muebles que se estiran
+hasta llenar su hueco.
+
+Tres fallos que aparecieron al probar, todos invisibles desde el código:
+
+- El aviso flotante capturaba el ratón sin tener nada que pulsar y dejaba
+  muerta la barra de arriba durante sus cinco segundos. Ahora lleva VER y
+  CERRAR, y solo los botones reciben el ratón.
+- El modelo de mesa se veía cambiado pero **no se guardaba**, y la petición
+  devolvía 200. Era el servidor local sirviendo código anterior a la columna
+  nueva. Verificado después de punta a punta: selector → API → Supabase.
+- Las siluetas se contrarrotaban (venía de mantener el nombre derecho) y una
+  barra de 260×35 salía de canto, ocupando el 13% de su hueco.
+
 ## 2026-08-09 — `/vapi/tools` deja de estar abierto
 
 Era el agujero más serio del sistema, y pasó a ser urgente en cuanto la voz
