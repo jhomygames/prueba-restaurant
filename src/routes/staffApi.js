@@ -200,7 +200,8 @@ router.patch("/api/tables/:id", manejar(async (req, res) => {
 }));
 
 router.delete("/api/tables/:id", manejar(async (req, res) => {
-  await db.borrar(ctxDe(req), MESAS, req.params.id);
+  const borrada = await db.borrar(ctxDe(req), MESAS, req.params.id);
+  if (siNoExiste(res, borrada, "mesa_no_encontrada")) return;
   res.json({ ok: true });
 }));
 
@@ -310,7 +311,8 @@ router.patch("/api/decorations/:id", manejar(async (req, res) => {
 }));
 
 router.delete("/api/decorations/:id", manejar(async (req, res) => {
-  await db.borrar(ctxDe(req), DECORACIONES, req.params.id);
+  const borrada = await db.borrar(ctxDe(req), DECORACIONES, req.params.id);
+  if (siNoExiste(res, borrada, "decoracion_no_encontrada")) return;
   res.json({ ok: true });
 }));
 
@@ -436,7 +438,8 @@ router.patch("/api/menu/:id", manejar(async (req, res) => {
 }));
 
 router.delete("/api/menu/:id", manejar(async (req, res) => {
-  await db.borrar(ctxDe(req), CARTA, req.params.id);
+  const borrado = await db.borrar(ctxDe(req), CARTA, req.params.id);
+  if (siNoExiste(res, borrado, "plato_no_encontrado")) return;
   res.json({ ok: true });
 }));
 

@@ -169,13 +169,25 @@ async function actualizar(ctx, tabla, id, cambios) {
   return Array.isArray(filas) ? filas[0] : filas;
 }
 
-/** Borra una fila, con la misma protección de tenant que `actualizar`. */
+/**
+ * Borra una fila, con la misma protección de tenant que `actualizar`.
+ *
+ * Devuelve la fila borrada, o `null` si no se borró ninguna. Antes devolvía
+ * `true` siempre, y eso hacía que borrar algo de otro restaurante respondiera
+ * "hecho" sin haber tocado nada: quien lo pidiera se quedaba creyendo que lo
+ * había conseguido, y en una auditoría parece una brecha hasta que se mira la
+ * base. Que no se borre está bien; mentir sobre ello, no.
+ */
 async function borrar(ctx, tabla, id) {
   const tenant = exigirTenant(ctx, tabla);
   const filtro = [`id=eq.${encodeURIComponent(id)}`];
   if (tenant) filtro.push(`restaurante=eq.${encodeURIComponent(tenant)}`);
-  await pedir(`${tabla}?${filtro.join("&")}`, { method: "DELETE" });
-  return true;
+
+  const filas = await pedir(`${tabla}?${filtro.join("&")}`, {
+    method: "DELETE",
+    headers: { Prefer: "return=representation" },
+  });
+  return Array.isArray(filas) ? filas[0] || null : filas || null;
 }
 
 module.exports = { listar, obtener, crear, actualizar, borrar, valor, exigirTenant };

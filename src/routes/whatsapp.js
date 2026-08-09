@@ -1,15 +1,20 @@
 /**
- * Webhook de WhatsApp (Twilio WhatsApp Business API) + loop de tool-use de
- * Claude. Comparte las mismas herramientas (src/config/tools.js) y el mismo
- * dispatcher (src/services/toolDispatcher.js) que el agente de voz.
+ * Webhook de WhatsApp (Twilio) + loop de tool-use de Claude.
  *
- * TODO (punto 10 CLAUDE.md): el historial de conversación vive ahora mismo en
- * memoria del proceso (_conversations). Mover a Supabase o Redis para que
- * sobreviva reinicios/despliegues.
+ * OJO, ESTA RUTA NO ESTÁ EN USO Y SIGUE SOBRE AIRTABLE.
  *
- * TODO (punto 9 CLAUDE.md): verificar la firma de Twilio (X-Twilio-Signature)
- * antes de producción, usando twilio.validateRequest con TWILIO_AUTH_TOKEN y
- * la URL pública real (PUBLIC_BASE_URL).
+ * El WhatsApp de los restaurantes lo atiende n8n, no la app. Esta ruta se
+ * quedó atrás en la migración a Supabase: importa `registry` y
+ * `toolDispatcher`, que son los de Airtable. Si algún día recibiera un mensaje
+ * de verdad, escribiría la reserva en Airtable y el panel no la vería.
+ *
+ * Se deja porque es la base para traer WhatsApp a la app el día que se decida,
+ * pero antes hay que migrarla igual que se hizo con la voz (ver
+ * `dialectoMarta.js` y `repo/escribir.js`). Mientras tanto, la comprobación de
+ * firma falla cerrado, así que no se puede usar para colar nada.
+ *
+ * TODO: el historial de conversación vive en memoria del proceso
+ * (_conversations) y se pierde en cada despliegue.
  */
 
 const express = require("express");
@@ -76,10 +81,26 @@ function anthropicTools() {
   }));
 }
 
+/**
+ * Comprueba que el mensaje viene de Twilio de verdad.
+ *
+ * Antes, si faltaba el token o la dirección pública, devolvía `true` y dejaba
+ * pasar cualquier POST: bastaba con conocer la URL para hacerse pasar por un
+ * cliente y crear, cambiar o anular reservas.
+ *
+ * Ahora falla cerrado. Un endpoint que no puede comprobar quién llama debe
+ * rechazar, no confiar.
+ */
 function verifyTwilioSignature(req, creds) {
   const authToken = (creds && creds.authToken) || process.env.TWILIO_AUTH_TOKEN;
   const publicUrl = process.env.PUBLIC_BASE_URL;
-  if (!authToken || !publicUrl) return true; // TODO: exigir esto antes de producción (punto 9)
+  if (!authToken || !publicUrl) {
+    console.error(
+      "[whatsapp] no se puede comprobar la firma de Twilio " +
+        `(${!authToken ? "falta el auth token" : "falta PUBLIC_BASE_URL"}): se rechaza.`
+    );
+    return false;
+  }
   const signature = req.headers["x-twilio-signature"];
   const url = `${publicUrl}/whatsapp/webhook`;
   return twilio.validateRequest(authToken, signature, url, req.body);
