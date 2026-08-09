@@ -158,8 +158,11 @@ async function findReservation(args, contexto) {
   return {
     encontrada: true,
     total: lista.length,
+    // El id_reserva viaja en los datos porque el guion lo necesita para
+    // modificar o cancelar, pero fuera del mensaje: lo que va en `mensaje` es
+    // lo que el agente puede leer en voz alta, y el código no se dice.
     reservas: lista.map((x) => aFormaMarta(x, zona)),
-    mensaje: r.mensaje,
+    mensaje: sinCodigo(r.mensaje),
   };
 }
 
