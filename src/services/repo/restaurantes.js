@@ -39,6 +39,8 @@ function aRestaurante(fila) {
       // Cifrada. Quien la reciba debe descifrarla con secretBox, nunca usarla
       // tal cual ni devolverla al navegador.
       apiKeyEnc: fila.vapi_api_key_enc || "",
+      // El guion vive fuera de la app y no debe sobrescribirse desde el panel.
+      guionExterno: fila.vapi_guion_externo === true,
     },
     whatsapp: {
       numero: fila.whatsapp_numero || "",

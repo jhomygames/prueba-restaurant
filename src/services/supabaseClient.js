@@ -31,8 +31,16 @@
  *                   no como filtro: es lo que se usa DESPUÉS para montar la
  *                   sesión.
  *   historial_reservas — la traza de n8n, que no distingue local todavía.
+ *   whatsapp_chat_historial — la escribe n8n con el teléfono como `session_id`
+ *                   y no tiene columna de local. Solo se consulta para saber si
+ *                   existe conversación previa, nunca para leer su contenido.
  */
-const TABLAS_SIN_TENANT = new Set(["restaurantes", "usuarios", "historial_reservas"]);
+const TABLAS_SIN_TENANT = new Set([
+  "restaurantes",
+  "usuarios",
+  "historial_reservas",
+  "whatsapp_chat_historial",
+]);
 
 function config() {
   const url = process.env.SUPABASE_URL;

@@ -15,6 +15,7 @@
 
 const express = require("express");
 const agente = require("../services/agente");
+const dialectoMarta = require("../services/dialectoMarta");
 const registry = require("../services/repo/restaurantes");
 const { safeCompare } = require("../services/secretBox");
 
@@ -96,12 +97,19 @@ router.post("/vapi/tools", async (req, res) => {
           args = {};
         }
       }
+      const contexto = {
+        customer_phone: customerPhone,
+        restaurante: restaurant,
+        channel: "voz",
+      };
+
       try {
-        const result = await agente.ejecutar(name, args, {
-          customer_phone: customerPhone,
-          restaurante: restaurant,
-          channel: "voz",
-        });
+        // Cada agente llama a sus herramientas por el nombre que tiene escrito
+        // en su guion. El de este restaurante usa el suyo propio, así que se
+        // traduce en vez de obligarle a cambiar un guion que ya funciona.
+        const result = dialectoMarta.esDeMarta(name)
+          ? await dialectoMarta.ejecutar(name, args, contexto)
+          : await agente.ejecutar(name, args, contexto);
         return { toolCallId: call.id, result: JSON.stringify(result) };
       } catch (err) {
         console.error(`[vapiTools] error ejecutando ${name}:`, err);

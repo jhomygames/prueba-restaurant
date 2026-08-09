@@ -356,6 +356,17 @@ router.post(
     if (!creds) return res.status(400).json({ error: "sin_api_key_vapi" });
     if (!req.restaurant.vapi.assistantId) return res.status(400).json({ error: "sin_assistant" });
 
+    // Vapi no guarda versiones anteriores: sobrescribir un guion escrito fuera
+    // de la app lo destruye sin vuelta atrás. Mejor negarse y decirlo.
+    if (req.restaurant.vapi.guionExterno) {
+      return res.status(409).json({
+        error: "guion_externo",
+        mensaje:
+          "El guion de este agente se mantiene fuera de la app y no se sincroniza desde aquí: " +
+          "hacerlo lo sustituiría por la plantilla genérica y no habría forma de recuperarlo.",
+      });
+    }
+
     await vapiAdmin.updateAssistant(
       creds.key,
       req.restaurant.vapi.assistantId,

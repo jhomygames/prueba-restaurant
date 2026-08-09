@@ -34,22 +34,27 @@ function interpretarFecha(valor, local) {
   if (!resuelta) {
     return {
       ok: false,
+      // El código lo mira el guion del agente para distinguir "no te he
+      // entendido" de "ha fallado el sistema": lo primero se resuelve
+      // preguntando otra vez, lo segundo pasando la llamada al equipo.
+      codigo: "FECHA_AMBIGUA",
       mensaje: "No he terminado de entender qué día me dices. ¿Me confirmas la fecha?",
     };
   }
   if (fecha.esPasada(resuelta, { zona })) {
-    return { ok: false, mensaje: "Ese día ya ha pasado. ¿Te busco hueco para otro?" };
+    return { ok: false, codigo: "FECHA_PASADA", mensaje: "Ese día ya ha pasado. ¿Te busco hueco para otro?" };
   }
   return { ok: true, fecha: resuelta, hablada: fecha.enVozAlta(resuelta, { zona }) };
 }
 
 function comprobarGrupo(personas) {
   const n = Number(personas);
-  if (!n || n <= 0) return { ok: false, mensaje: "¿Para cuántas personas sería?" };
+  if (!n || n <= 0) return { ok: false, codigo: "PERSONAS_NO_VALIDAS", mensaje: "¿Para cuántas personas sería?" };
   if (n > GRUPO_GRANDE) {
     return {
       ok: false,
       grupoGrande: true,
+      codigo: "GRUPO_GRANDE",
       mensaje: `Para grupos de más de ${GRUPO_GRANDE} personas te paso con el equipo, que lo organizan ellos directamente.`,
     };
   }
@@ -218,14 +223,27 @@ async function findReservation(local, args, contexto) {
     return { found: true, reservation: r, mensaje: `Tienes reserva el ${r.date} a las ${r.time} para ${r.party_size} personas.` };
   }
 
-  if (!telefono) return { found: false, mensaje: "¿Me das tu teléfono o el código de la reserva?" };
+  const nombre = args.customer_name || args.name;
+  if (!telefono && !nombre) {
+    return { found: false, mensaje: "¿Me das tu teléfono o el código de la reserva?" };
+  }
 
   const futuras = await lectura.reservasDesde(local.ctx);
   const phone = require("./phone");
-  const clave = phone.digitsKey(telefono);
-  const suyas = futuras.filter(
-    (r) => phone.digitsKey(r.customer_phone) === clave && r.status === "confirmada"
-  );
+  const activas = futuras.filter((r) => r.status === "confirmada");
+
+  // El teléfono manda: es el dato que identifica sin ambigüedad. El nombre es
+  // el respaldo para cuando la reserva se hizo desde otro número o a nombre de
+  // otra persona, que es justo cuando el cliente se queda sin salida.
+  let suyas = [];
+  if (telefono) {
+    const clave = phone.digitsKey(telefono);
+    suyas = activas.filter((r) => phone.digitsKey(r.customer_phone) === clave);
+  }
+  if (suyas.length === 0 && nombre) {
+    const buscado = sinAcentos(nombre).trim();
+    suyas = activas.filter((r) => sinAcentos(r.customer_name).includes(buscado));
+  }
 
   if (suyas.length === 0) {
     return { found: false, mensaje: "No encuentro ninguna reserva a tu nombre para los próximos días." };
