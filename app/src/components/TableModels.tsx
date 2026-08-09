@@ -130,6 +130,77 @@ function sillasEnRectangulo(
   );
 }
 
+/**
+ * Contorno de un mueble en L, con el codo arriba a la izquierda.
+ *
+ * `largo` es lo que mide cada brazo desde el codo; `brazo`, su grosor. Se
+ * dibuja de una sola pasada en vez de con dos rectángulos superpuestos: al
+ * solaparse, la parte común saldría más oscura y se vería la costura por
+ * dentro, que es justo lo que delata un dibujo mal hecho.
+ */
+function caminoL(x: number, y: number, largo: number, brazo: number) {
+  return `M ${x} ${y} H ${x + largo} V ${y + brazo} H ${x + brazo} V ${y + largo} H ${x} Z`;
+}
+
+/**
+ * Reparte sillas por los cantos de un mueble en L.
+ *
+ * `dentro` es la cara cóncava (la que mira al centro de la sala) y `fuera` la
+ * que va contra las paredes. Un rincón de verdad tiene el banco pegado a la
+ * pared y las sillas por el lado de dentro; por eso hay que poder elegir.
+ */
+function sillasEnL(
+  n: number,
+  x: number,
+  y: number,
+  largo: number,
+  brazo: number,
+  hueco: number,
+  cara: 'dentro' | 'fuera'
+) {
+  const porBrazo = Math.ceil(n / 2);
+  const enHorizontal = Math.min(n, porBrazo);
+  const enVertical = n - enHorizontal;
+  const reparto = (cuantas: number, i: number) => (i + 1) / (cuantas + 1);
+
+  if (cara === 'fuera') {
+    return (
+      <>
+        {Array.from({ length: enHorizontal }, (_, i) => (
+          <Silla key={`h${i}`} x={x + largo * reparto(enHorizontal, i)} y={y - hueco} giro={0} />
+        ))}
+        {Array.from({ length: enVertical }, (_, i) => (
+          <Silla key={`v${i}`} x={x - hueco} y={y + largo * reparto(enVertical, i)} giro={270} />
+        ))}
+      </>
+    );
+  }
+
+  // Por dentro, los cantos arrancan en el codo: de ahí el desplazamiento.
+  const desde = brazo;
+  const recorrido = largo - brazo;
+  return (
+    <>
+      {Array.from({ length: enHorizontal }, (_, i) => (
+        <Silla
+          key={`h${i}`}
+          x={x + desde + recorrido * reparto(enHorizontal, i)}
+          y={y + brazo + hueco}
+          giro={180}
+        />
+      ))}
+      {Array.from({ length: enVertical }, (_, i) => (
+        <Silla
+          key={`v${i}`}
+          x={x + brazo + hueco}
+          y={y + desde + recorrido * reparto(enVertical, i)}
+          giro={90}
+        />
+      ))}
+    </>
+  );
+}
+
 export const TABLE_MODELS: TableModelInfo[] = [
   {
     id: 'redonda',
@@ -218,6 +289,76 @@ export const TABLE_MODELS: TableModelInfo[] = [
         <rect x={18} y={80} width={94} height={20} rx={7} {...asiento} />
         <path d="M 18 100 L 112 100" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" opacity={0.75} />
         <rect x={26} y={38} width={78} height={34} rx={4} {...tablero} />
+      </>
+    ),
+  },
+  {
+    id: 'rincon',
+    name: 'Rincón',
+    description: 'Banco en L contra dos paredes, mesa en el codo',
+    size: { w: 104, h: 104 },
+    viewBox: '0 0 150 150',
+    maxSillas: 10,
+    render: () => (
+      <>
+        {/* Banco corrido pegado a las paredes: aquí no se cuentan sillas, se
+            sienta quien quepa, igual que en el reservado. */}
+        <path d={caminoL(10, 10, 130, 22)} {...asiento} />
+        <path
+          d="M 10 10 H 140 M 10 10 V 140"
+          stroke="currentColor"
+          strokeWidth={2.6}
+          strokeLinecap="round"
+          opacity={0.75}
+          fill="none"
+        />
+        <path d={caminoL(38, 38, 100, 26)} {...tablero} />
+      </>
+    ),
+  },
+  {
+    id: 'esquina-corrida',
+    name: 'Esquina corrida',
+    description: 'Mesa en L con sillas por los dos cantos',
+    size: { w: 104, h: 104 },
+    viewBox: '0 0 150 150',
+    maxSillas: 14,
+    render: (plazas) => {
+      const n = Math.min(Math.max(plazas, 2), 14);
+      // La mitad por fuera y la mitad por dentro: es una mesa exenta, se
+      // ocupan los dos lados.
+      const fuera = Math.ceil(n / 2);
+      return (
+        <>
+          {sillasEnL(fuera, 34, 34, 100, 26, 12, 'fuera')}
+          {sillasEnL(n - fuera, 34, 34, 100, 26, 12, 'dentro')}
+          <path d={caminoL(34, 34, 100, 26)} {...tablero} />
+        </>
+      );
+    },
+  },
+  {
+    id: 'esquina-mixta',
+    name: 'Esquina mixta',
+    description: 'Banco en L por dentro y sillas por fuera',
+    size: { w: 104, h: 104 },
+    viewBox: '0 0 150 150',
+    maxSillas: 10,
+    render: (plazas) => (
+      <>
+        {/* Las sillas van por el lado de dentro, que es el que queda libre:
+            contra la pared está el banco y ahí no cabe nada más. */}
+        {sillasEnL(Math.min(Math.max(plazas, 1), 10), 38, 38, 100, 26, 12, 'dentro')}
+        <path d={caminoL(10, 10, 130, 22)} {...asiento} />
+        <path
+          d="M 10 10 H 140 M 10 10 V 140"
+          stroke="currentColor"
+          strokeWidth={2.6}
+          strokeLinecap="round"
+          opacity={0.75}
+          fill="none"
+        />
+        <path d={caminoL(38, 38, 100, 26)} {...tablero} />
       </>
     ),
   },
