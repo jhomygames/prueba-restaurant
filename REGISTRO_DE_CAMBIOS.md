@@ -130,6 +130,32 @@ Lo que no, por orden de gravedad:
 Pendiente por decisión del usuario: rotar la `service_role` (aplazado otra vez)
 y la pasada de seguridad/autenticación del final del proyecto.
 
+## 2026-08-09 — Plantas, plano en la base, taburetes y rejilla
+
+**Plantas del local.** Un restaurante de dos pisos tenía un solo lienzo con
+todo mezclado. Ahora hay plantas con nombre, cada una con sus mesas, sus zonas
+y su decoración. El selector solo aparece si hay más de una. Borrar una planta
+**no** borra lo que hay encima: pasa a otra. Perder mesas con sus reservas
+colgando por un clic sería desproporcionado.
+
+**El plano pasa a Supabase.** Las decoraciones vivían solo en el `localStorage`
+del navegador: el plano era distinto en cada dispositivo y se perdía al
+limpiarlo. Se suben solas la primera vez y se borra la copia local. De paso, el
+botón "Restaurar por defecto" deja de tocar la decoración: desde que el plano
+es real, "restaurar" habría sido borrar el plano del restaurante.
+
+**Taburetes sueltos.** La barra era UNA mesa con N taburetes, así que reservar
+el asiento 2 ocupaba los cuatro. Ahora el taburete es una mesa de una plaza y
+el mostrador es decoración, que es como funciona una barra de verdad.
+
+**Rejilla ajustable.** Se redondeaba siempre al 1% —saltos de unos seis
+píxeles— sin forma de afinar. El paso baja a medio punto y el imán se apaga con
+un botón.
+
+Detalle que evita un susto futuro: un modelo retirado ya no se convierte en
+otra cosa en silencio. `barra` se traduce a `taburete` en vez de caer en la
+mesa cuadrada por defecto.
+
 ## 2026-08-09 — El plano: turnos, pases y muebles dibujados
 
 **Turnos.** Un día no es un bloque, son dos servicios. La mesa reservada a las
