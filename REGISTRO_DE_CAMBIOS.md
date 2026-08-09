@@ -130,6 +130,28 @@ Lo que no, por orden de gravedad:
 Pendiente por decisión del usuario: rotar la `service_role` (aplazado otra vez)
 y la pasada de seguridad/autenticación del final del proyecto.
 
+## 2026-08-09 — `/vapi/tools` deja de estar abierto
+
+Era el agujero más serio del sistema, y pasó a ser urgente en cuanto la voz
+empezó a entrar por ahí: el id del agente no es secreto —lo devuelve la propia
+pantalla de Configuración— así que cualquiera con él podía crear, cambiar y
+anular reservas del restaurante.
+
+Las 7 herramientas de Vapi mandan ahora un secreto compartido en la cabecera
+`x-vapi-secret`, y la app lo exige. Verificado en producción: sin cabecera 401,
+con cabecera equivocada 401, con la correcta 200. Y confirmado con una llamada
+real (RES-555776-938, con Mesa 1 asignada).
+
+El orden fue deliberado —primero el secreto en Vapi, después la variable en
+Railway— para no dejar una ventana rechazando llamadas de clientes. Lo que sí
+faltó fue comprobar **antes** que Vapi había guardado el secreto: su API no lo
+devuelve ni expone ninguna marca, así que hubo un rato en que el teléfono podría
+haber estado mudo sin saberlo. Se resolvió con una llamada de prueba, que es lo
+único concluyente. Para la próxima vez: probar la llamada antes de activar la
+variable, no después.
+
+`/health` informa ahora en `vapiToolsProtegido` de si la protección está activa.
+
 ## 2026-08-09 — El agente de voz pasa a escribir en la app
 
 Resuelto el misterio de las reservas sin mesa. **El teléfono nunca pasaba por
