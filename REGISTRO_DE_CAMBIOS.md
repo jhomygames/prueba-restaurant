@@ -130,6 +130,43 @@ Lo que no, por orden de gravedad:
 Pendiente por decisión del usuario: rotar la `service_role` (aplazado otra vez)
 y la pasada de seguridad/autenticación del final del proyecto.
 
+## 2026-08-09 — Revisión de seguridad e integridad
+
+Hecha atacando el sistema, no leyendo el código: con la clave pública real y
+con un segundo restaurante creado para intentar acceder al primero.
+
+**Lo que estaba abierto y ya no:**
+
+| Qué | Cómo se comprobó |
+|---|---|
+| `whatsapp_chat_historial` sin protección de filas | Se **escribió** una fila con la clave pública (HTTP 201) |
+| `check_existing_reservation` pública | Respondía si un teléfono tenía reserva un día dado |
+| `resolver_restaurante` pública | Devolvía el restaurante de un assistant de Vapi |
+| Las 13 funciones SQL, abiertas | Todas ejecutables sin autenticar |
+| Webhook de WhatsApp fallaba abierto | Sin auth token daba por buena cualquier petición |
+
+Detalle que casi se cuela: **revocar de `anon` no bastó**. En Postgres las
+funciones nacen con `EXECUTE` concedido a `PUBLIC`, y ese permiso alcanza a
+todos los roles. Se vio porque las funciones seguían respondiendo después de
+revocar. Hubo que revocar de `PUBLIC` y conceder a `service_role`.
+
+**Un fallo de integridad, no de seguridad:** `DELETE` de una mesa de otro
+restaurante respondía `ok:true` sin borrar nada. El filtro hacía su trabajo,
+pero la respuesta decía lo contrario. Ahora devuelve 404, igual que `PATCH`.
+
+**Lo que resistió:** insertar, modificar o borrar en masa con la clave pública
+(la protección de filas los frena), y el aislamiento entre restaurantes en
+leer, modificar y borrar. Verificado mesa a mesa: 25 reservas y 17 mesas
+intactas después de intentarlo.
+
+**Se descubrió que `src/routes/whatsapp.js` no está en uso y sigue sobre
+Airtable.** Importa `registry` y `toolDispatcher`, los viejos. Si recibiera un
+mensaje real escribiría la reserva donde el panel no la ve. Queda documentado
+en el propio fichero y con la firma fallando cerrado.
+
+**Sigue pendiente por decisión del usuario:** rotar la `service_role`, que está
+en texto plano en los nodos de n8n.
+
 ## 2026-08-09 — Plantas, plano en la base, taburetes y rejilla
 
 **Plantas del local.** Un restaurante de dos pisos tenía un solo lienzo con
