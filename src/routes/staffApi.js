@@ -28,6 +28,8 @@ const MESAS = "mesas";
 const RESERVAS = "reservas";
 const CLIENTES = "clientes";
 const CARTA = "carta";
+const PLANTAS = "plantas";
+const DECORACIONES = "decoraciones";
 
 const MESA_ESTADO_ES = {
   free: "Libre",
@@ -80,6 +82,26 @@ function aTabla(f) {
     model: f.modelo || "",
     rotation: f.rotacion || 0,
     zone: f.zona || "Interior",
+    floorId: f.planta_id == null ? null : String(f.planta_id),
+  };
+}
+
+function aPlanta(f) {
+  return { id: String(f.id), name: f.nombre || "", order: f.orden || 0 };
+}
+
+function aDecoracion(f) {
+  return {
+    id: String(f.id),
+    name: f.nombre || "",
+    type: f.tipo || "plant",
+    x: f.pos_x == null ? 50 : Number(f.pos_x),
+    y: f.pos_y == null ? 50 : Number(f.pos_y),
+    width: f.ancho == null ? 40 : Number(f.ancho),
+    height: f.alto == null ? 40 : Number(f.alto),
+    rotation: f.rotacion || 0,
+    plantModel: f.modelo_planta || undefined,
+    floorId: f.planta_id == null ? null : String(f.planta_id),
   };
 }
 
@@ -153,6 +175,7 @@ router.post("/api/tables", manejar(async (req, res) => {
     forma: b.shape || "square",
     modelo: b.model || null,
     rotacion: b.rotation || 0,
+    planta_id: b.floorId || null,
   });
   res.status(201).json(aTabla(fila));
 }));
@@ -169,6 +192,7 @@ router.patch("/api/tables/:id", manejar(async (req, res) => {
   if (b.shape !== undefined) cambios.forma = b.shape;
   if (b.model !== undefined) cambios.modelo = b.model || null;
   if (b.rotation !== undefined) cambios.rotacion = b.rotation;
+  if (b.floorId !== undefined) cambios.planta_id = b.floorId || null;
 
   const fila = await db.actualizar(ctxDe(req), MESAS, req.params.id, cambios);
   if (siNoExiste(res, fila, "mesa_no_encontrada")) return;
@@ -177,6 +201,116 @@ router.patch("/api/tables/:id", manejar(async (req, res) => {
 
 router.delete("/api/tables/:id", manejar(async (req, res) => {
   await db.borrar(ctxDe(req), MESAS, req.params.id);
+  res.json({ ok: true });
+}));
+
+// ---------- Plantas del local ----------
+
+router.get("/api/floors", manejar(async (req, res) => {
+  const filas = await db.listar(ctxDe(req), PLANTAS, { orden: "orden.asc" });
+  res.json(filas.map(aPlanta));
+}));
+
+router.post("/api/floors", manejar(async (req, res) => {
+  const b = req.body || {};
+  const nombre = String(b.name || "").trim();
+  if (!nombre) return res.status(400).json({ error: "nombre_vacio" });
+
+  const fila = await db.crear(ctxDe(req), PLANTAS, {
+    nombre,
+    orden: b.order ?? 0,
+  });
+  res.status(201).json(aPlanta(fila));
+}));
+
+router.patch("/api/floors/:id", manejar(async (req, res) => {
+  const b = req.body || {};
+  const cambios = {};
+  if (b.name !== undefined) {
+    const nombre = String(b.name).trim();
+    if (!nombre) return res.status(400).json({ error: "nombre_vacio" });
+    cambios.nombre = nombre;
+  }
+  if (b.order !== undefined) cambios.orden = b.order;
+
+  const fila = await db.actualizar(ctxDe(req), PLANTAS, req.params.id, cambios);
+  if (siNoExiste(res, fila, "planta_no_encontrada")) return;
+  res.json(aPlanta(fila));
+}));
+
+/**
+ * Borrar una planta no borra lo que hay encima.
+ *
+ * Sus mesas y decoraciones pasan a la primera planta que quede. Borrar un piso
+ * por error y llevarse con él las mesas —con sus reservas colgando— sería un
+ * destrozo desproporcionado para lo que parece un clic inocente.
+ */
+router.delete("/api/floors/:id", manejar(async (req, res) => {
+  const ctx = ctxDe(req);
+  const plantas = await db.listar(ctx, PLANTAS, { orden: "orden.asc" });
+  if (plantas.length <= 1) {
+    return res.status(400).json({ error: "ultima_planta" });
+  }
+
+  const destino = plantas.find((p) => String(p.id) !== String(req.params.id));
+  const mudar = async (tabla) => {
+    const filas = await db.listar(ctx, tabla, { filtros: { planta_id: req.params.id } });
+    for (const f of filas) {
+      await db.actualizar(ctx, tabla, f.id, { planta_id: destino.id });
+    }
+    return filas.length;
+  };
+
+  const mesas = await mudar(MESAS);
+  const decoraciones = await mudar(DECORACIONES);
+  await db.borrar(ctx, PLANTAS, req.params.id);
+
+  res.json({ ok: true, movidas: { mesas, decoraciones }, destino: aPlanta(destino) });
+}));
+
+// ---------- Decoraciones del plano ----------
+
+router.get("/api/decorations", manejar(async (req, res) => {
+  const filas = await db.listar(ctxDe(req), DECORACIONES, { orden: "id.asc" });
+  res.json(filas.map(aDecoracion));
+}));
+
+router.post("/api/decorations", manejar(async (req, res) => {
+  const b = req.body || {};
+  const fila = await db.crear(ctxDe(req), DECORACIONES, {
+    nombre: b.name || "",
+    tipo: b.type || "plant",
+    pos_x: b.x ?? 50,
+    pos_y: b.y ?? 50,
+    ancho: b.width ?? 40,
+    alto: b.height ?? 40,
+    rotacion: b.rotation || 0,
+    modelo_planta: b.plantModel || null,
+    planta_id: b.floorId || null,
+  });
+  res.status(201).json(aDecoracion(fila));
+}));
+
+router.patch("/api/decorations/:id", manejar(async (req, res) => {
+  const b = req.body || {};
+  const cambios = {};
+  if (b.name !== undefined) cambios.nombre = b.name;
+  if (b.type !== undefined) cambios.tipo = b.type;
+  if (b.x !== undefined) cambios.pos_x = b.x;
+  if (b.y !== undefined) cambios.pos_y = b.y;
+  if (b.width !== undefined) cambios.ancho = b.width;
+  if (b.height !== undefined) cambios.alto = b.height;
+  if (b.rotation !== undefined) cambios.rotacion = b.rotation;
+  if (b.plantModel !== undefined) cambios.modelo_planta = b.plantModel || null;
+  if (b.floorId !== undefined) cambios.planta_id = b.floorId || null;
+
+  const fila = await db.actualizar(ctxDe(req), DECORACIONES, req.params.id, cambios);
+  if (siNoExiste(res, fila, "decoracion_no_encontrada")) return;
+  res.json(aDecoracion(fila));
+}));
+
+router.delete("/api/decorations/:id", manejar(async (req, res) => {
+  await db.borrar(ctxDe(req), DECORACIONES, req.params.id);
   res.json({ ok: true });
 }));
 

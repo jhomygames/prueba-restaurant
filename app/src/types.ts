@@ -16,6 +16,8 @@ export interface Table {
   model?: string;
   rotation: number; // in degrees (0, 90, 180, 270)
   zone?: string; // Interior / Terraza / Barra (campo Zona en Supabase)
+  /** Planta (piso) del local en la que está. Vacío = la primera. */
+  floorId?: string | null;
 }
 
 export type DecorationType = 'wall' | 'furniture' | 'plant' | 'bar_counter';
@@ -30,6 +32,8 @@ export interface Decoration {
   height: number; // arbitrary scale height, e.g. 10 to 100
   rotation: number; // in degrees
   plantModel?: string; // model ID for plants, e.g. 'rosette' | 'radial' | 'flowery' | 'concentric' | 'fern' | 'starburst'
+  /** Planta (piso) del local en la que está. Vacío = la primera. */
+  floorId?: string | null;
 }
 
 export type ReservationStatus = 'pending' | 'confirmed' | 'seated' | 'completed' | 'cancelled';

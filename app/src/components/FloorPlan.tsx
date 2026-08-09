@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Table, TableStatus, Reservation, Decoration, DecorationType } from '../types';
 import { pasesDeMesa, horaDeSalida, pasesQueSePisan } from '../turnos';
 import { TABLE_MODELS, modeloDeMesa, SiluetaSofa, SiluetaBarra } from './TableModels';
-import { Plus, Trash2, RotateCw, Edit3, Check, Eye, HelpCircle, ZoomIn, Maximize2, Minus } from 'lucide-react';
+import { Plus, Trash2, RotateCw, Edit3, Check, Eye, HelpCircle, ZoomIn, Maximize2, Minus, Grid3x3 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export interface PlantModelInfo {
@@ -236,6 +236,21 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
   const zoomOut = () => setZoom((z) => Math.max(ZOOM_MIN, +(z - 0.2).toFixed(2)));
   const zoomReset = () => setZoom(1);
 
+  // Medio punto porcentual: unos 3 px en el lienzo. Suficientemente fino para
+  // colocar a gusto y suficientemente basto para que dos mesas seguidas queden
+  // alineadas sin pelearse con el ratón.
+  const PASO_REJILLA = 0.5;
+  const [snapActivo, setSnapActivo] = useState<boolean>(() => {
+    const guardado = localStorage.getItem('plano_rejilla');
+    return guardado === null ? true : guardado === '1';
+  });
+  const alternarSnap = () => {
+    setSnapActivo((v) => {
+      localStorage.setItem('plano_rejilla', v ? '0' : '1');
+      return !v;
+    });
+  };
+
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [activeDragType, setActiveDragType] = useState<'table' | 'decoration' | null>(null);
   const [editingPropertiesId, setEditingPropertiesId] = useState<string | null>(null);
@@ -300,16 +315,29 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
 
+  /**
+   * Ajusta una posición a la rejilla, si está puesta.
+   *
+   * Antes se redondeaba siempre al 1%, y eso son saltos de unos seis píxeles:
+   * con la rejilla quitada no había forma de afinar. Ahora el imán se puede
+   * apagar, y cuando está puesto se guarda con dos decimales porque en Supabase
+   * la posición es `numeric` y los aguanta.
+   */
+  const ajustar = (valor: number) => {
+    const v = snapActivo ? Math.round(valor / PASO_REJILLA) * PASO_REJILLA : valor;
+    return Math.round(v * 100) / 100;
+  };
+
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!isEditMode || !activeDragId || !containerRef.current || !activeDragType) return;
-    
+
     const rect = containerRef.current.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
-    
+
     // Bound positions between 1% and 95% to avoid overflowing borders
-    const boundedX = Math.max(1, Math.min(95, Math.round(x)));
-    const boundedY = Math.max(1, Math.min(95, Math.round(y)));
+    const boundedX = Math.max(1, Math.min(95, ajustar(x)));
+    const boundedY = Math.max(1, Math.min(95, ajustar(y)));
     
     if (activeDragType === 'table') {
       const tableToUpdate = tables.find(t => t.id === activeDragId);
@@ -555,6 +583,25 @@ export const FloorPlan: React.FC<FloorPlanProps> = ({
                 </button>
               </>
             )}
+
+            {/* Imán de la rejilla. Puesto, alinea mesas en fila sin pelearse
+                con el ratón; quitado, deja colocar al píxel. */}
+            <button
+              onClick={alternarSnap}
+              title={
+                snapActivo
+                  ? 'Rejilla activa: las piezas se alinean solas. Púlsalo para moverlas libremente.'
+                  : 'Movimiento libre. Púlsalo para que las piezas se alineen a la rejilla.'
+              }
+              className={`ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs font-sans transition-colors cursor-pointer ${
+                snapActivo
+                  ? 'bg-brand-primary/15 border-brand-primary/40 text-brand-primary'
+                  : 'bg-brand-surface-low border-brand-outline text-brand-muted hover:text-brand-text'
+              }`}
+            >
+              <Grid3x3 className="w-3.5 h-3.5" />
+              {snapActivo ? 'Rejilla' : 'Libre'}
+            </button>
           </div>
         )}
       </div>

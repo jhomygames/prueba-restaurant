@@ -4,7 +4,7 @@
  * Airtable es la única base de datos: aquí no hay estado persistente local.
  */
 
-import { Table, Reservation } from './types';
+import { Table, Reservation, Decoration } from './types';
 
 export interface Customer {
   id: string;
@@ -113,6 +113,42 @@ export const updateTable = (id: string, patch: Partial<Table>) =>
 
 export const deleteTable = (id: string) =>
   req<{ deleted: boolean }>(`/api/tables/${id}`, { method: 'DELETE' });
+
+// ---------- Plantas del local ----------
+
+export interface Floor {
+  id: string;
+  name: string;
+  order: number;
+}
+
+export const fetchFloors = () => req<Floor[]>('/api/floors');
+
+export const createFloor = (name: string, order = 0) =>
+  req<Floor>('/api/floors', { method: 'POST', body: JSON.stringify({ name, order }) });
+
+export const updateFloor = (id: string, patch: Partial<Omit<Floor, 'id'>>) =>
+  req<Floor>(`/api/floors/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+
+/** Lo que hubiera encima pasa a otra planta; no se borra nada más. */
+export const deleteFloor = (id: string) =>
+  req<{ ok: boolean; movidas: { mesas: number; decoraciones: number }; destino: Floor }>(
+    `/api/floors/${id}`,
+    { method: 'DELETE' }
+  );
+
+// ---------- Decoraciones del plano ----------
+
+export const fetchDecorations = () => req<Decoration[]>('/api/decorations');
+
+export const createDecoration = (d: Omit<Decoration, 'id'>) =>
+  req<Decoration>('/api/decorations', { method: 'POST', body: JSON.stringify(d) });
+
+export const updateDecoration = (id: string, patch: Partial<Decoration>) =>
+  req<Decoration>(`/api/decorations/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+
+export const deleteDecoration = (id: string) =>
+  req<{ ok: boolean }>(`/api/decorations/${id}`, { method: 'DELETE' });
 
 // ---------- Reservas ----------
 
@@ -273,6 +309,23 @@ export function updateTableDebounced(table: Table, delayMs = 700): void {
       pendingTimers.delete(table.id);
       const { id, ...fields } = table;
       updateTable(id, fields).catch((err) => console.error('updateTable failed:', err));
+    }, delayMs)
+  );
+}
+
+/** Igual que el de mesas: arrastrar una decoración dispara un update por píxel. */
+export function updateDecorationDebounced(dec: Decoration, delayMs = 700): void {
+  const clave = `dec-${dec.id}`;
+  const prev = pendingTimers.get(clave);
+  if (prev) clearTimeout(prev);
+  pendingTimers.set(
+    clave,
+    setTimeout(() => {
+      pendingTimers.delete(clave);
+      const { id, ...fields } = dec;
+      updateDecoration(id, fields).catch((err) =>
+        console.error('updateDecoration failed:', err)
+      );
     }, delayMs)
   );
 }

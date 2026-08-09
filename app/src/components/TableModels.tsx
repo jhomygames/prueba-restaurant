@@ -385,25 +385,25 @@ export const TABLE_MODELS: TableModelInfo[] = [
     },
   },
   {
-    id: 'barra',
-    name: 'Barra',
-    description: 'Tramo de barra con taburetes por fuera',
-    size: { w: 124, h: 56 },
-    viewBox: '0 0 180 80',
-    maxSillas: 8,
-    render: (plazas) => {
-      const n = Math.min(Math.max(plazas, 1), 8);
-      return (
-        <>
-          {Array.from({ length: n }, (_, i) => (
-            <Taburete key={i} x={(180 / (n + 1)) * (i + 1)} y={62} r={6} />
-          ))}
-          <rect x={10} y={18} width={160} height={26} rx={3} {...tablero} />
-          {/* El canto por el que se atiende. */}
-          <path d="M 10 44 L 170 44" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" opacity={0.6} />
-        </>
-      );
-    },
+    id: 'taburete',
+    name: 'Taburete',
+    description: 'Un asiento suelto de barra, se reserva por separado',
+    size: { w: 34, h: 34 },
+    viewBox: '0 0 100 100',
+    maxSillas: 1,
+    /**
+     * Un taburete es UNA plaza y una unidad reservable.
+     *
+     * El mostrador no se dibuja aquí: es decoración. Si la barra entera fuese
+     * una sola mesa, reservar el taburete 2 ocuparía los cuatro, que es justo
+     * lo que no se quiere de una barra.
+     */
+    render: () => (
+      <>
+        <circle cx={50} cy={50} r={30} {...asiento} />
+        <circle cx={50} cy={50} r={11} fill="currentColor" fillOpacity={0.3} />
+      </>
+    ),
   },
 ];
 
@@ -439,14 +439,27 @@ const DESDE_FORMA: Record<TableShape, string> = {
   square: 'cuadrada',
   circle: 'redonda',
   rectangle: 'rectangular',
-  bar: 'alta',
+  // Las mesas que se dieron de alta como "barra" eran asientos sueltos de 1
+  // plaza, así que su equivalente es el taburete, no una barra entera.
+  bar: 'taburete',
 };
 
 /**
  * Modelo de una mesa. Si no tiene ninguno elegido se deduce de su forma, para
  * que las mesas de antes del catálogo se sigan viendo sin tocarlas.
  */
+/**
+ * Modelos que existieron y ya no.
+ *
+ * Sin esto, una mesa guardada con un modelo retirado caería en el de por
+ * defecto y se convertiría en una mesa cuadrada sin que nadie lo pidiera.
+ * `barra` fue una barra entera como mesa única; ahora el mostrador es
+ * decoración y cada asiento va suelto.
+ */
+const RETIRADOS: Record<string, string> = { barra: 'taburete' };
+
 export function modeloDeMesa(model: string | undefined, shape: TableShape): TableModelInfo {
-  const id = model || DESDE_FORMA[shape] || 'cuadrada';
+  const pedido = model || DESDE_FORMA[shape] || 'cuadrada';
+  const id = RETIRADOS[pedido] || pedido;
   return TABLE_MODELS.find((m) => m.id === id) || TABLE_MODELS[1];
 }

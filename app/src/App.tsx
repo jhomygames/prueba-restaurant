@@ -32,7 +32,9 @@ import {
   FileText,
   Users,
   Settings as SettingsIcon,
-  LogOut
+  LogOut,
+  Edit3,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -52,11 +54,12 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
-  // Las decoraciones del plano son cosméticas: se quedan en localStorage.
-  const [decorations, setDecorations] = useState<Decoration[]>(() => {
-    const saved = localStorage.getItem(ns('decorations'));
-    return saved ? JSON.parse(saved) : INITIAL_DECORATIONS;
-  });
+  // El plano (decoraciones y plantas) vive en Supabase, no en el navegador:
+  // era lo único del panel que cambiaba según el dispositivo desde el que se
+  // mirase, y con la barra convertida en decoración eso dejó de ser tolerable.
+  const [decorations, setDecorations] = useState<Decoration[]>([]);
+  const [floors, setFloors] = useState<api.Floor[]>([]);
+  const [selectedFloorId, setSelectedFloorId] = useState<string | null>(null);
 
   const [isToleranceEnabled, setIsToleranceEnabled] = useState<boolean>(() => {
     const saved = localStorage.getItem(ns('tolerance_enabled'));
@@ -150,18 +153,56 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
   const isPollingPaused = useRef(false);
   const isRefreshing = useRef(false);
 
+  /**
+   * Sube a la base el plano que este navegador tuviera guardado.
+   *
+   * Se ejecuta una sola vez, cuando la base todavía no tiene decoraciones. Si
+   * no hay nada guardado se suben las de ejemplo, para que un local nuevo no
+   * arranque con el lienzo desnudo. Al terminar se borra la copia local: dos
+   * fuentes para el mismo dato acaban discrepando.
+   */
+  const subirDecoracionesLocales = async (plantas: api.Floor[]) => {
+    const guardado = localStorage.getItem(ns('decorations'));
+    const locales: Decoration[] = guardado ? JSON.parse(guardado) : INITIAL_DECORATIONS;
+    if (locales.length === 0) return;
+
+    const planta = plantas[0]?.id ?? null;
+    try {
+      const subidas: Decoration[] = [];
+      for (const d of locales) {
+        const { id: _viejo, ...campos } = d;
+        subidas.push(await api.createDecoration({ ...campos, floorId: planta }));
+      }
+      setDecorations(subidas);
+      localStorage.removeItem(ns('decorations'));
+      addNotificationLog(
+        'Plano Guardado en la Nube',
+        `Las ${subidas.length} decoraciones del plano estaban solo en este navegador. ` +
+          `Ya están en la base, así que se ven igual desde cualquier dispositivo.`,
+        'system'
+      );
+    } catch (err) {
+      // Que falle no debe impedir usar el panel: se reintenta al siguiente
+      // arranque, porque la condición (base vacía) sigue cumpliéndose.
+      console.error('No se pudieron subir las decoraciones locales:', err);
+    }
+  };
+
   const refreshFromServer = async (silent = true) => {
     // No pisar el estado local mientras el usuario arrastra mesas o edita,
     // ni solapar dos refrescos si la red va lenta (respuestas fuera de orden).
     if (isPollingPaused.current || isRefreshing.current) return;
     isRefreshing.current = true;
     try {
-      const [remoteTables, remoteReservations, remoteCustomers, remoteMenu] = await Promise.all([
-        api.fetchTables(),
-        api.fetchReservations(),
-        api.fetchCustomers(),
-        api.fetchMenu(),
-      ]);
+      const [remoteTables, remoteReservations, remoteCustomers, remoteMenu, remoteFloors, remoteDecorations] =
+        await Promise.all([
+          api.fetchTables(),
+          api.fetchReservations(),
+          api.fetchCustomers(),
+          api.fetchMenu(),
+          api.fetchFloors(),
+          api.fetchDecorations(),
+        ]);
 
       // Detectar reservas nuevas llegadas por voz/WhatsApp para notificar
       if (knownReservationIds.current) {
@@ -190,6 +231,14 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
       setReservations(remoteReservations);
       setCustomers(remoteCustomers);
       setMenu(remoteMenu);
+      setFloors(remoteFloors);
+      setDecorations(remoteDecorations);
+
+      // El plano vivía en el localStorage del navegador: distinto en cada
+      // dispositivo y perdido al limpiarlo. Si la base aún no tiene nada pero
+      // este navegador sí, se sube una vez y se olvida la copia local.
+      if (remoteDecorations.length === 0) await subirDecoracionesLocales(remoteFloors);
+
       setApiError(null);
       setIsLoaded(true);
     } catch (err: any) {
@@ -207,10 +256,6 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem(ns('decorations'), JSON.stringify(decorations));
-  }, [decorations]);
 
   useEffect(() => {
     localStorage.setItem(ns('tolerance_enabled'), JSON.stringify(isToleranceEnabled));
@@ -446,7 +491,9 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
   const handleAddTable = async (newTable: Table) => {
     try {
       const { id: _tempId, ...fields } = newTable;
-      const created = await api.createTable(fields);
+      // Nace en la planta que se está mirando, que es donde el usuario cree
+      // estar poniéndola.
+      const created = await api.createTable({ ...fields, floorId: selectedFloorId });
       setTables(prev => [...prev, created]);
       addNotificationLog(
         "Plano Actualizado",
@@ -481,24 +528,103 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
 
   const handleUpdateDecoration = (updatedDec: Decoration) => {
     setDecorations(prev => prev.map(d => d.id === updatedDec.id ? updatedDec : d));
+    // Con debounce, igual que las mesas: arrastrar dispara un update por píxel.
+    api.updateDecorationDebounced(updatedDec);
   };
 
-  const handleAddDecoration = (newDec: Decoration) => {
-    setDecorations(prev => [...prev, newDec]);
-    addNotificationLog(
-      "Plano Actualizado",
-      `Se ha añadido el elemento decorativo: "${newDec.name}".`,
-      'system'
-    );
+  const handleAddDecoration = async (newDec: Decoration) => {
+    try {
+      const { id: _tempId, ...campos } = newDec;
+      const creada = await api.createDecoration({ ...campos, floorId: selectedFloorId });
+      setDecorations(prev => [...prev, creada]);
+      addNotificationLog(
+        "Plano Actualizado",
+        `Se ha añadido el elemento decorativo: "${creada.name}".`,
+        'system'
+      );
+    } catch (err) {
+      console.error('createDecoration:', err);
+      alert('No se pudo guardar la decoración. Revisa la conexión.');
+    }
   };
 
-  const handleDeleteDecoration = (decId: string) => {
+  const handleDeleteDecoration = async (decId: string) => {
+    const antes = decorations;
     setDecorations(prev => prev.filter(d => d.id !== decId));
-    addNotificationLog(
-      "Plano Actualizado",
-      "Se ha eliminado el elemento decorativo del plano.",
-      'system'
-    );
+    try {
+      await api.deleteDecoration(decId);
+      addNotificationLog(
+        "Plano Actualizado",
+        "Se ha eliminado el elemento decorativo del plano.",
+        'system'
+      );
+    } catch (err) {
+      // Si el borrado no llega al servidor, devolverlo al plano: que
+      // desaparezca de la pantalla y siga en la base es lo peor de los dos.
+      console.error('deleteDecoration:', err);
+      setDecorations(antes);
+      alert('No se pudo eliminar la decoración. Revisa la conexión.');
+    }
+  };
+
+  // --- Plantas del local ---
+
+  const handleAddFloor = async () => {
+    const nombre = prompt('Nombre de la planta nueva (ej. "Primera planta")');
+    if (!nombre?.trim()) return;
+    try {
+      const creada = await api.createFloor(nombre.trim(), floors.length);
+      setFloors(prev => [...prev, creada]);
+      setSelectedFloorId(creada.id);
+      addNotificationLog(
+        'Planta Añadida',
+        `"${creada.name}" está lista. Añade sus mesas y decoración con el modo edición.`,
+        'system'
+      );
+    } catch (err) {
+      console.error('createFloor:', err);
+      alert('No se pudo crear la planta.');
+    }
+  };
+
+  const handleRenameFloor = async (floor: api.Floor) => {
+    const nombre = prompt('Nuevo nombre de la planta', floor.name);
+    if (!nombre?.trim() || nombre.trim() === floor.name) return;
+    try {
+      const actualizada = await api.updateFloor(floor.id, { name: nombre.trim() });
+      setFloors(prev => prev.map(f => (f.id === actualizada.id ? actualizada : f)));
+    } catch (err) {
+      console.error('updateFloor:', err);
+      alert('No se pudo renombrar la planta.');
+    }
+  };
+
+  const handleDeleteFloor = async (floor: api.Floor) => {
+    if (floors.length <= 1) {
+      alert('No se puede borrar la única planta del local.');
+      return;
+    }
+    const enLaPlanta = tables.filter(t => (t.floorId ?? floors[0]?.id) === floor.id).length;
+    const aviso = enLaPlanta
+      ? `"${floor.name}" tiene ${enLaPlanta} mesa(s). No se borran: pasan a otra planta. ¿Sigo?`
+      : `¿Borrar la planta "${floor.name}"?`;
+    if (!confirm(aviso)) return;
+
+    try {
+      const r = await api.deleteFloor(floor.id);
+      setFloors(prev => prev.filter(f => f.id !== floor.id));
+      setSelectedFloorId(r.destino.id);
+      await refreshFromServer();
+      addNotificationLog(
+        'Planta Eliminada',
+        `"${floor.name}" ya no existe. Sus ${r.movidas.mesas} mesa(s) y ` +
+          `${r.movidas.decoraciones} decoración(es) están ahora en "${r.destino.name}".`,
+        'system'
+      );
+    } catch (err) {
+      console.error('deleteFloor:', err);
+      alert('No se pudo borrar la planta.');
+    }
   };
 
   // --- Menu / Carta Handlers (Airtable como única BD) ---
@@ -638,15 +764,19 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
     }
   };
 
-  // Las mesas y reservas viven en Supabase: aquí solo se restauran los
-  // elementos locales (decoración del plano) y se fuerza una resincronización.
+  /**
+   * Limpia lo local y recarga desde el servidor.
+   *
+   * Ya no restaura la decoración por defecto: desde que el plano vive en
+   * Supabase, "restaurar" habría significado borrar el plano real del
+   * restaurante, que es un destrozo, no un reinicio. Lo único local que queda
+   * son las notificaciones.
+   */
   const handleResetDefaults = () => {
-    if (confirm('¿Restaurar la decoración del plano por defecto y resincronizar con Airtable? (Las mesas, reservas y clientes NO se tocan: viven en Supabase.)')) {
-      localStorage.removeItem(ns('decorations'));
-      setDecorations(INITIAL_DECORATIONS);
+    if (confirm('¿Vaciar el historial de notificaciones y recargar los datos desde Supabase? (El plano, las mesas y las reservas NO se tocan.)')) {
       setNotifications([]);
       refreshFromServer(false);
-      addNotificationLog("Sistema Resincronizado", "Decoración restaurada y datos recargados desde Supabase.", 'system');
+      addNotificationLog("Sistema Resincronizado", "Datos recargados desde Supabase.", 'system');
     }
   };
 
@@ -674,6 +804,16 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
   // otro: la mesa reservada a las dos de la tarde está libre para la cena.
   const reservasDelTurno = reservations.filter(r => esDelTurno(r, selectedShift));
 
+  // Qué planta se está mirando. Lo que no tiene planta asignada cae en la
+  // primera: es lo que había antes de que existieran los pisos.
+  const plantaPorDefecto = floors[0]?.id ?? null;
+  const plantaActiva = selectedFloorId ?? plantaPorDefecto;
+  const enLaPlanta = <T extends { floorId?: string | null }>(x: T) =>
+    (x.floorId ?? plantaPorDefecto) === plantaActiva;
+
+  const mesasDeLaPlanta = tables.filter(enLaPlanta);
+  const decoracionesDeLaPlanta = decorations.filter(enLaPlanta);
+
   const estadoMesaEnFecha = (t: Table): TableStatus => {
     if (t.status === 'out_of_service') return 'out_of_service';
     const conReserva = reservasDelTurno.some(
@@ -683,10 +823,12 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
     return selectedDate === hoyISO ? t.status : 'free';
   };
 
-  const totalTables = tables.length;
-  const occupiedTablesCount = tables.filter(t => estadoMesaEnFecha(t) === 'occupied').length;
-  const reservedTablesCount = tables.filter(t => estadoMesaEnFecha(t) === 'reserved').length;
-  const freeTablesCount = tables.filter(t => estadoMesaEnFecha(t) === 'free').length;
+  // Las cuentas son de la planta que se mira: al mirar la terraza no interesa
+  // cuántas mesas hay libres en el piso de arriba.
+  const totalTables = mesasDeLaPlanta.length;
+  const occupiedTablesCount = mesasDeLaPlanta.filter(t => estadoMesaEnFecha(t) === 'occupied').length;
+  const reservedTablesCount = mesasDeLaPlanta.filter(t => estadoMesaEnFecha(t) === 'reserved').length;
+  const freeTablesCount = mesasDeLaPlanta.filter(t => estadoMesaEnFecha(t) === 'free').length;
 
   return (
     <div className="min-h-screen bg-brand-bg text-brand-text font-sans overflow-x-hidden flex flex-col">
@@ -832,6 +974,23 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
                 </button>
               ))}
             </div>
+
+            {/* Planta del local. Solo aparece si hay más de una: en un local de
+                una sola planta, un selector con una opción es ruido. */}
+            {floors.length > 1 && (
+              <select
+                value={plantaActiva ?? ''}
+                onChange={(e) => setSelectedFloorId(e.target.value)}
+                title="Planta del local"
+                className="ml-1 bg-brand-surface border border-brand-outline hover:border-brand-primary/40 rounded-lg px-2 py-0.5 text-[10px] font-mono font-bold text-brand-text focus:outline-none cursor-pointer"
+              >
+                {floors.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
 
@@ -988,6 +1147,58 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
                           }`}
                         />
                       </button>
+                    </div>
+
+                    {/* Plantas del local. Un restaurante de dos pisos tiene dos
+                        planos distintos, no uno con todo mezclado. */}
+                    <div className="p-2.5 bg-brand-surface-high border border-brand-outline rounded-xl space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium text-brand-text">Plantas del local</span>
+                        <button
+                          onClick={handleAddFloor}
+                          className="text-[10px] font-mono font-bold text-brand-primary hover:underline cursor-pointer"
+                        >
+                          + AÑADIR
+                        </button>
+                      </div>
+                      {floors.map((f) => {
+                        const mesasAqui = tables.filter(
+                          (t) => (t.floorId ?? plantaPorDefecto) === f.id
+                        ).length;
+                        return (
+                          <div key={f.id} className="flex items-center gap-1.5 text-[11px]">
+                            <button
+                              onClick={() => setSelectedFloorId(f.id)}
+                              className={`flex-1 text-left truncate px-1.5 py-1 rounded cursor-pointer transition-colors ${
+                                plantaActiva === f.id
+                                  ? 'bg-brand-primary/15 text-brand-primary font-bold'
+                                  : 'text-brand-muted hover:text-brand-text'
+                              }`}
+                            >
+                              {f.name}
+                              <span className="ml-1.5 font-mono text-[9px] opacity-70">
+                                {mesasAqui} mesa{mesasAqui === 1 ? '' : 's'}
+                              </span>
+                            </button>
+                            <button
+                              onClick={() => handleRenameFloor(f)}
+                              title="Renombrar"
+                              className="p-1 text-brand-muted hover:text-brand-primary cursor-pointer"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                            </button>
+                            {floors.length > 1 && (
+                              <button
+                                onClick={() => handleDeleteFloor(f)}
+                                title="Borrar (las mesas pasan a otra planta)"
+                                className="p-1 text-brand-muted hover:text-red-400 cursor-pointer"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
 
                     {/* Tolerance Checker Option */}
@@ -1252,7 +1463,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
           {activeTab === 'floor' ? (
             <div className="flex-1 h-full min-h-[450px]">
               <FloorPlan
-                tables={tables}
+                tables={mesasDeLaPlanta}
                 reservations={reservasDelTurno}
                 selectedTableId={selectedTableId}
                 onSelectTable={handleSelectTable}
@@ -1260,7 +1471,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
                 onUpdateTable={handleUpdateTable}
                 onAddTable={handleAddTable}
                 onDeleteTable={handleDeleteTable}
-                decorations={decorations}
+                decorations={decoracionesDeLaPlanta}
                 onUpdateDecoration={handleUpdateDecoration}
                 onAddDecoration={handleAddDecoration}
                 onDeleteDecoration={handleDeleteDecoration}
