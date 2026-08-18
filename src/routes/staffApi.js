@@ -340,6 +340,11 @@ router.post("/api/reservations", manejar(async (req, res) => {
     notas: b.notes || "",
     canal: "panel",
     lopd: b.lopdAccepted === true,
+    // La mesa la elige una persona en el plano. Antes se descartaba aquí y el
+    // backend repartía por su cuenta: se abría el modal desde la Mesa 3 y la
+    // reserva podía acabar en la 1.
+    mesaId: b.tableId || null,
+    duracionMin: b.customDurationMinutes || null,
   });
 
   if (!r.creada) {
@@ -348,6 +353,10 @@ router.post("/api/reservations", manejar(async (req, res) => {
     const explicacion = {
       fuera_de_horario: horario.explicar(r.horario || {}),
       sin_mesa: "No queda ninguna mesa libre a esa hora.",
+      mesa_ocupada: r.choca
+        ? `Esa mesa ya la tiene ${r.choca} en ese horario.`
+        : "Esa mesa ya está ocupada en ese horario.",
+      mesa_no_encontrada: "Esa mesa ya no existe en el plano.",
       duplicada: "Ese cliente ya tiene una reserva ese mismo turno.",
       datos_incompletos: "Faltan datos para crear la reserva.",
     };
@@ -361,19 +370,61 @@ router.post("/api/reservations", manejar(async (req, res) => {
   res.status(201).json(aReserva(fila));
 }));
 
+/**
+ * Campos cuyo cambio puede dejar la reserva en un sitio imposible: fuera de
+ * horario o encima de otra. Solo si se toca alguno hay que revalidar.
+ */
+const CAMPOS_DE_SITIO = ["date", "time", "pax", "tableId", "customDurationMinutes"];
+
 router.patch("/api/reservations/:id", manejar(async (req, res) => {
   const b = req.body || {};
   const cambios = {};
 
+  // Antes aquí no se comprobaba nada: se podía editar una reserva y ponerla a
+  // las tres de la madrugada, o encima de otra que ya tenía esa mesa.
+  //
+  // Cambiar SOLO el estado (sentar, completar, anular) se salta esta revisión a
+  // propósito: sentar a un comensal que ya está en la puerta no puede fallar
+  // porque el reloj diga que la cocina cerró.
+  if (CAMPOS_DE_SITIO.some((c) => b[c] !== undefined)) {
+    const actual = await db.obtener(ctxDe(req), RESERVAS, req.params.id);
+    if (siNoExiste(res, actual, "reserva_no_encontrada")) return;
+
+    const fecha = b.date !== undefined ? b.date : actual.fecha;
+    const hora = b.time !== undefined ? b.time : String(actual.hora || "").slice(0, 5);
+    const mesaId = b.tableId !== undefined ? b.tableId : actual.mesa_id;
+    const duracion =
+      b.customDurationMinutes !== undefined ? b.customDurationMinutes : actual.duracion_min;
+
+    const apertura = await horario.comprobar(ctxDe(req), fecha, hora);
+    if (!apertura.abierto) {
+      return res.status(409).json({ error: "fuera_de_horario", mensaje: horario.explicar(apertura) });
+    }
+    // El turno se recalcula con la hora definitiva, no con la que traía.
+    cambios.turno = apertura.turno || (await horario.turnoDe(ctxDe(req), fecha, hora));
+
+    if (mesaId) {
+      const { libre, choca } = await escribir.mesaLibre(ctxDe(req), {
+        fecha, hora, duracion, mesaId, excluirId: req.params.id,
+      });
+      if (!libre) {
+        return res.status(409).json({
+          error: "mesa_ocupada",
+          mensaje: choca
+            ? `Esa mesa ya la tiene ${choca} en ese horario.`
+            : "Esa mesa ya está ocupada en ese horario.",
+        });
+      }
+    }
+  }
+
   if (b.customerName !== undefined) cambios.nombre = b.customerName;
   if (b.customerPhone !== undefined) cambios.telefono = b.customerPhone;
   if (b.date !== undefined) cambios.fecha = b.date;
-  if (b.time !== undefined) {
-    cambios.hora = b.time;
-    // El turno se deriva de la hora en vez de aceptarlo del cliente: así no
-    // puede quedar un "comida" a las 22:00 por un despiste al editar.
-    cambios.turno = await horario.turnoDe(ctxDe(req), b.date || "1970-01-01", b.time);
-  }
+  // El turno NO se calcula aquí: ya lo hizo la revisión de arriba con la fecha
+  // definitiva. Antes se hacía con `b.date || "1970-01-01"`, así que editar solo
+  // la hora resolvía el turno contra una fecha inventada.
+  if (b.time !== undefined) cambios.hora = b.time;
   if (b.pax !== undefined) cambios.personas = b.pax;
   if (b.tableId !== undefined) cambios.mesa_id = b.tableId || null;
   if (b.status !== undefined) {

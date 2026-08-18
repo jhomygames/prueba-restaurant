@@ -64,10 +64,28 @@ async function req<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new Error('sesion_expirada');
   }
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`API ${options.method || 'GET'} ${path} -> ${res.status}: ${body}`);
+    // El cuerpo se conserva, no se aplasta contra un string. El backend explica
+    // en castellano por qué no se pudo guardar ("Esa mesa ya la tiene Alberto en
+    // ese horario") y esa frase tiene que llegar a quien está delante del panel,
+    // no un "revisa la conexión" que además es mentira.
+    const body = await res.json().catch(() => ({} as any));
+    const err = new ApiError(
+      body.mensaje || `API ${options.method || 'GET'} ${path} -> ${res.status}`
+    );
+    err.codigo = body.error;
+    err.status = res.status;
+    err.cuerpo = body;
+    throw err;
   }
   return res.json();
+}
+
+/** Error de la API con el motivo del backend intacto. */
+export class ApiError extends Error {
+  codigo?: string;
+  status?: number;
+  /** Cuerpo completo: algunos errores traen más contexto (p. ej. `indice`). */
+  cuerpo?: Record<string, unknown>;
 }
 
 // ---------- Autenticación ----------
@@ -223,6 +241,34 @@ export const fetchSettings = () => req<RestaurantSettings>('/api/settings');
 
 export const saveSettings = (patch: Partial<Pick<RestaurantSettings, 'nombre' | 'googleReviewUrl' | 'staffWhatsApp'>>) =>
   req<RestaurantSettings>('/api/settings', { method: 'PUT', body: JSON.stringify(patch) });
+
+// ---------- Horario de servicio ----------
+
+/**
+ * Una franja de servicio. `dias` va de 1 (lunes) a 7 (domingo), como en la base;
+ * OJO al pintarlo, porque `Date.getDay()` cuenta distinto (0 = domingo).
+ *
+ * `horaFin` es la ÚLTIMA HORA A LA QUE SE ADMITE UNA RESERVA, no la hora de
+ * cierre de cocina.
+ */
+export interface Turno {
+  id: string;
+  nombre: 'comida' | 'cena';
+  horaInicio: string; // HH:MM
+  horaFin: string;    // HH:MM
+  dias: number[];
+  activo: boolean;
+}
+
+export interface ConfigHorario {
+  duracionReservaMin: number;
+  turnos: Turno[];
+}
+
+export const fetchTurnos = () => req<ConfigHorario>('/api/settings/turnos');
+
+export const saveTurnos = (config: { duracionReservaMin: number; turnos: Omit<Turno, 'id'>[] }) =>
+  req<ConfigHorario>('/api/settings/turnos', { method: 'PUT', body: JSON.stringify(config) });
 
 export const saveVapiKey = (apiKey: string | null) =>
   req<RestaurantSettings>('/api/settings/vapi', { method: 'PUT', body: JSON.stringify({ apiKey }) });

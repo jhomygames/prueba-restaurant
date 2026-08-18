@@ -14,7 +14,9 @@
 const express = require("express");
 const crypto = require("crypto");
 const twilio = require("twilio");
+const db = require("../services/supabaseClient");
 const registry = require("../services/repo/restaurantes");
+const horario = require("../services/horario");
 const vapiAdmin = require("../services/vapiAdmin");
 const connectors = require("../services/connectors");
 const { encrypt, decrypt, mask } = require("../services/secretBox");
@@ -655,6 +657,163 @@ router.post(
     } catch (err) {
       res.status(400).json({ ok: false, error: err.message });
     }
+  })
+);
+
+// ---------- Horario de servicio ----------
+
+/**
+ * En España un restaurante no abre "de X a Y": abre a mediodía, cierra, y vuelve
+ * a abrir por la noche. Por eso el horario son franjas y no un único intervalo:
+ * con un solo tramo de 13:00 a 23:30 se podría reservar a las seis de la tarde,
+ * cuando no hay nadie en cocina.
+ *
+ * Esto solo da la pantalla para configurarlo. El bloqueo ya existía y lo aplican
+ * `horario.comprobar()` y `repo/escribir`, así que en cuanto se guarda aquí lo
+ * respetan por igual el panel, WhatsApp y el agente de voz. A Vapi no hay que
+ * tocarle nada: Marta pregunta a la app, no decide ella.
+ */
+
+const TURNOS_VALIDOS = ["comida", "cena"];
+
+function aTurnoPublico(f) {
+  return {
+    id: String(f.id),
+    nombre: f.nombre,
+    // Postgres devuelve "13:00:00"; el <input type="time"> quiere "13:00".
+    horaInicio: String(f.hora_inicio || "").slice(0, 5),
+    horaFin: String(f.hora_fin || "").slice(0, 5),
+    dias: (f.dias || []).map(Number).sort((a, b) => a - b),
+    activo: f.activo !== false,
+  };
+}
+
+function aMinutos(hora) {
+  const m = String(hora || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/**
+ * Revisa las franjas antes de escribir. Devuelve un mensaje en castellano o null.
+ *
+ * Se valida aquí y no solo en el navegador porque este endpoint es lo que decide
+ * si el restaurante acepta reservas: una franja invertida guardada a la brava
+ * dejaría el local sin poder reservar y sin explicar por qué.
+ */
+function revisarTurnos(turnos) {
+  if (!Array.isArray(turnos)) return { error: "formato_invalido", mensaje: "No se recibió ninguna lista de franjas." };
+
+  for (const [i, t] of turnos.entries()) {
+    const donde = `Franja ${i + 1}`;
+
+    if (!TURNOS_VALIDOS.includes(t.nombre)) {
+      return { error: "nombre_invalido", indice: i, mensaje: `${donde}: el turno debe ser comida o cena.` };
+    }
+
+    const ini = aMinutos(t.horaInicio);
+    const fin = aMinutos(t.horaFin);
+    if (ini === null || fin === null) {
+      return { error: "hora_invalida", indice: i, mensaje: `${donde}: las horas deben ir en formato HH:MM.` };
+    }
+    if (ini >= fin) {
+      // Cruzar medianoche exigiría otro modelo de datos, no un parche aquí.
+      return {
+        error: "franja_invertida",
+        indice: i,
+        mensaje: `${donde}: la hora de fin debe ser posterior a la de inicio. Los turnos que cruzan medianoche todavía no se admiten.`,
+      };
+    }
+
+    const dias = Array.isArray(t.dias) ? t.dias.map(Number) : [];
+    if (dias.length === 0 || dias.some((d) => !Number.isInteger(d) || d < 1 || d > 7)) {
+      return { error: "dias_invalidos", indice: i, mensaje: `${donde}: elige al menos un día de la semana.` };
+    }
+  }
+
+  // Dos franjas activas no pueden pisarse el mismo día: si se pisan, no hay forma
+  // de decir a qué turno pertenece una reserva a esa hora.
+  const activas = turnos.map((t, i) => ({ ...t, i })).filter((t) => t.activo !== false);
+  for (let a = 0; a < activas.length; a++) {
+    for (let b = a + 1; b < activas.length; b++) {
+      const compartenDia = activas[a].dias.some((d) => activas[b].dias.includes(Number(d)));
+      if (!compartenDia) continue;
+      const iniA = aMinutos(activas[a].horaInicio);
+      const finA = aMinutos(activas[a].horaFin);
+      const iniB = aMinutos(activas[b].horaInicio);
+      const finB = aMinutos(activas[b].horaFin);
+      if (iniA < finB && iniB < finA) {
+        return {
+          error: "franjas_solapadas",
+          indice: activas[b].i,
+          mensaje: `Las franjas ${activas[a].i + 1} y ${activas[b].i + 1} se pisan en algún día. Sepáralas.`,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+router.get(
+  "/api/settings/turnos",
+  handle(async (req, res) => {
+    const filas = await db.listar(req.restaurant.ctx, "turnos", { orden: "hora_inicio.asc" });
+    res.json({
+      duracionReservaMin: req.restaurant.duracionReservaMin || 120,
+      turnos: filas.map(aTurnoPublico),
+    });
+  })
+);
+
+router.put(
+  "/api/settings/turnos",
+  handle(async (req, res) => {
+    const { turnos, duracionReservaMin } = req.body || {};
+
+    const problema = revisarTurnos(turnos);
+    if (problema) return res.status(400).json(problema);
+
+    if (duracionReservaMin !== undefined) {
+      const n = Number(duracionReservaMin);
+      if (!Number.isInteger(n) || n < 15 || n > 480) {
+        return res.status(400).json({
+          error: "duracion_invalida",
+          mensaje: "La duración estándar debe estar entre 15 y 480 minutos.",
+        });
+      }
+      await registry.actualizarRestaurante(req.restaurant.id, { duracion_reserva_min: n });
+    }
+
+    // Se reemplaza la lista entera en vez de ir fila a fila: las franjas se
+    // editan juntas y así no quedan estados a medias si algo falla por el camino.
+    const actuales = await db.listar(req.restaurant.ctx, "turnos", {});
+    for (const f of actuales) await db.borrar(req.restaurant.ctx, "turnos", f.id);
+
+    for (const t of turnos) {
+      await db.crear(req.restaurant.ctx, "turnos", {
+        nombre: t.nombre,
+        hora_inicio: t.horaInicio,
+        hora_fin: t.horaFin,
+        dias: t.dias.map(Number),
+        activo: t.activo !== false,
+      });
+    }
+
+    // SIN ESTO no sirve de nada: `horario.js` cachea el horario cinco minutos,
+    // así que el usuario guardaría, probaría al momento, y parecería que no ha
+    // cambiado nada.
+    horario.invalidar(req.restaurant.slug);
+
+    const filas = await db.listar(req.restaurant.ctx, "turnos", { orden: "hora_inicio.asc" });
+    const local = await registry.porSlug(req.restaurant.slug);
+    res.json({
+      duracionReservaMin: local?.duracionReservaMin || 120,
+      turnos: filas.map(aTurnoPublico),
+    });
   })
 );
 

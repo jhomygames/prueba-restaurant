@@ -58,6 +58,9 @@ function aReserva(fila) {
     shift: fila.turno || "",
     allergens: fila.alergias || [],
     lopd: fila.lopd_acepta === true,
+    // Minutos que ocupa la mesa. `null` = hereda la duración del local, así que
+    // cambiarla en Configuración también afecta a las reservas ya hechas.
+    duration_min: fila.duracion_min || null,
   };
 }
 

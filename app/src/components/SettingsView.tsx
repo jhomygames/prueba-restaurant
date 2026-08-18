@@ -16,10 +16,13 @@ import {
 } from 'lucide-react';
 import * as api from '../api';
 import { RestaurantSettings } from '../api';
+import { HorarioServicio } from './HorarioServicio';
 
 interface SettingsViewProps {
   onNotify: (title: string, message: string) => void;
   onRestaurantRenamed: (nombre: string) => void;
+  /** Para que el plano recargue los turnos en cuanto cambia el horario. */
+  onHorarioGuardado?: () => void;
 }
 
 type Estado = { tipo: 'ok' | 'error'; texto: string } | null;
@@ -99,7 +102,7 @@ const Aviso: React.FC<{ estado: Estado }> = ({ estado }) =>
     </div>
   ) : null;
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, onRestaurantRenamed }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, onRestaurantRenamed, onHorarioGuardado }) => {
   const [settings, setSettings] = useState<RestaurantSettings | null>(null);
   const [cargando, setCargando] = useState(true);
 
@@ -484,6 +487,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, onRestaura
 
   return (
     <div className="space-y-5 overflow-y-auto">
+      {/* --- Horario de servicio --- */}
+      {/* Va la primera porque es lo que más se consulta y lo que más cambia. */}
+      <HorarioServicio onNotify={onNotify} onHorarioGuardado={onHorarioGuardado} />
+
       {/* --- Restaurante --- */}
       <Tarjeta
         icono={<Store className="w-4 h-4" />}

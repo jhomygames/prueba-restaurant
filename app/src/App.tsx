@@ -66,10 +66,18 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
     return saved ? JSON.parse(saved) : true;
   });
 
+  /**
+   * Duración estándar de una mesa. La manda el restaurante (Configuración →
+   * Horario de servicio); el localStorage solo sirve para no arrancar en blanco
+   * mientras llega la respuesta, y como red de seguridad si la petición falla.
+   */
   const [defaultSeatedDuration, setDefaultSeatedDuration] = useState<number>(() => {
     const saved = localStorage.getItem(ns('default_seated_duration'));
     return saved ? JSON.parse(saved) : 120; // 2 hours by default
   });
+
+  /** Franjas de servicio del local. Vacío = aún sin cargar o sin configurar. */
+  const [turnos, setTurnos] = useState<api.Turno[]>([]);
 
   const [notifications, setNotifications] = useState<NotificationLog[]>([]);
 
@@ -194,7 +202,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
     if (isPollingPaused.current || isRefreshing.current) return;
     isRefreshing.current = true;
     try {
-      const [remoteTables, remoteReservations, remoteCustomers, remoteMenu, remoteFloors, remoteDecorations] =
+      const [remoteTables, remoteReservations, remoteCustomers, remoteMenu, remoteFloors, remoteDecorations, remoteHorario] =
         await Promise.all([
           api.fetchTables(),
           api.fetchReservations(),
@@ -202,6 +210,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
           api.fetchMenu(),
           api.fetchFloors(),
           api.fetchDecorations(),
+          api.fetchTurnos(),
         ]);
 
       // Detectar reservas nuevas llegadas por voz/WhatsApp para notificar
@@ -233,6 +242,8 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
       setMenu(remoteMenu);
       setFloors(remoteFloors);
       setDecorations(remoteDecorations);
+      setTurnos(remoteHorario.turnos);
+      setDefaultSeatedDuration(remoteHorario.duracionReservaMin);
 
       // El plano vivía en el localStorage del navegador: distinto en cada
       // dispositivo y perdido al limpiarlo. Si la base aún no tiene nada pero
@@ -706,9 +717,17 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
           'system'
         );
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('saveReservation:', err);
-      alert('No se pudo guardar la reserva en Supabase. Revisa la conexión.');
+      // El servidor explica en castellano por qué no se pudo ("Esa mesa ya la
+      // tiene Alberto en ese horario", "A esa hora está cerrado..."). Antes se
+      // tapaba con un "revisa la conexión" que además era falso.
+      alert(err?.message || 'No se pudo guardar la reserva.');
+      addNotificationLog(
+        'Reserva no guardada',
+        err?.message || 'No se pudo guardar la reserva.',
+        'system'
+      );
     }
   };
 
@@ -1525,6 +1544,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
               <SettingsView
                 onNotify={(titulo, msg) => addNotificationLog(titulo, msg, 'system')}
                 onRestaurantRenamed={setRestaurantName}
+                onHorarioGuardado={() => refreshFromServer(true)}
               />
             </div>
           )}
@@ -1544,6 +1564,9 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
         }}
         table={tables.find(t => t.id === selectedTableId) || null}
         activeReservation={editingReservation ?? getActiveReservationForSelectedTable()}
+        reservations={reservations}
+        turnos={turnos}
+        defaultSeatedDuration={defaultSeatedDuration}
         onSaveReservation={handleSaveReservation}
         onCancelReservation={handleCancelReservation}
         onSeatedReservation={handleSeatedReservation}

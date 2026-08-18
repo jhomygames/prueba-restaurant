@@ -1,14 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Table, Reservation } from '../types';
+import type { Turno } from '../api';
 import { ALLERGIES_OPTIONS, AUTO_CONFIRM_TEMPLATES } from '../data';
 import { X, Calendar, Clock, User, Phone, Users, FileText, Check, AlertTriangle, MessageSquare, Send, BellRing, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { TimelineMesa } from './TimelineMesa';
+import { estaViva } from '../turnos';
 
 interface ReservationModalProps {
   isOpen: boolean;
   onClose: () => void;
   table: Table | null;
   activeReservation: Reservation | null;
+  /** Todas las reservas cargadas: el calendario filtra las de esta mesa y día. */
+  reservations: Reservation[];
+  /** Franjas de servicio del local, para saber qué horas se pueden pintar. */
+  turnos: Turno[];
+  defaultSeatedDuration: number;
   onSaveReservation: (reservation: Omit<Reservation, 'id' | 'createdAt'> & { id?: string }) => void;
   onCancelReservation: (id: string) => void;
   onSeatedReservation: (id: string) => void;
@@ -20,6 +28,9 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
   onClose,
   table,
   activeReservation,
+  reservations,
+  turnos,
+  defaultSeatedDuration,
   onSaveReservation,
   onCancelReservation,
   onSeatedReservation,
@@ -66,11 +77,23 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
         setNotes('');
         setAllergies([]);
         setAutoConfirmMessage(true);
-        const savedDefault = localStorage.getItem('dinecontrol_default_seated_duration');
-        setCustomDurationMinutes(savedDefault ? JSON.parse(savedDefault) : 120);
+        // La duración estándar la fija el restaurante en Configuración; antes
+        // vivía solo en este navegador y el servidor no la conocía.
+        setCustomDurationMinutes(defaultSeatedDuration);
       }
     }
-  }, [isOpen, activeReservation, table]);
+  }, [isOpen, activeReservation, table, defaultSeatedDuration]);
+
+  /**
+   * Lo que ya ocupa esta mesa ese día. Depende de `date` a propósito: si se
+   * cambia el día en el formulario, el calendario tiene que repintarse con las
+   * reservas del día nuevo, no seguir enseñando las del anterior.
+   */
+  const reservasDeEstaMesa = useMemo(() => {
+    const mesaId = table?.id ?? activeReservation?.tableId ?? '';
+    if (!mesaId) return [];
+    return reservations.filter((r) => r.tableId === mesaId && r.date === date && estaViva(r));
+  }, [reservations, table?.id, activeReservation?.tableId, date]);
 
   // Sin mesa solo tiene sentido si estamos editando una reserva existente
   // (p. ej. una reserva del calendario cuya mesa fue eliminada del plano).
@@ -292,6 +315,18 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Ocupación de la mesa ese día: qué tramos están cogidos y cuáles no */}
+              <TimelineMesa
+                turnos={turnos}
+                fecha={date}
+                reservasDelDia={reservasDeEstaMesa}
+                duracionPorDefecto={defaultSeatedDuration}
+                horaSeleccionada={time}
+                duracionSeleccionada={customDurationMinutes}
+                reservaEditandoId={activeReservation?.id}
+                onElegirHora={setTime}
+              />
 
               {/* Diet / Allergies Multi-Selection */}
               <div>

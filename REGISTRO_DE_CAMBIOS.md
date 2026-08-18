@@ -80,6 +80,152 @@ scripts/
 
 ---
 
+## Sesión 2026-08-18 · El calendario de la mesa y el horario de servicio
+
+Dos peticiones del restaurante: ver la ocupación de una mesa al hacer una
+reserva, y poder configurar el horario de apertura desde el panel. Al ir a
+hacerlo aparecieron **tres defectos** que habrían hecho que el calendario
+enseñara una cosa y el sistema hiciera otra. Se arreglaron primero.
+
+### Los tres defectos
+
+**1. La mesa elegida se tiraba a la basura.** `POST /api/reservations` construía
+la llamada a `crearReserva()` sin pasar `b.tableId`, así que el backend repartía
+por su cuenta. Se abría el modal desde la Mesa 3 y la reserva podía acabar en la
+Mesa 1. Con un calendario por mesa esto era insostenible.
+
+**2. Una reserva se trataba como un instante, no como un tramo.** La detección de
+choques era `aMinutos(r.hora) === aMinutos(hora)`: solo consideraba ocupada una
+mesa si otra reserva empezaba **a la misma hora exacta**. Una reserva a las 17:00
+con dos horas de duración no impedía otra a las 18:00 en la misma mesa. Ahora se
+comparan tramos con `seSolapan()`, con el **final excluido**: una que acaba a las
+19:00 y otra que empieza a las 19:00 no chocan, porque la mesa se acaba de
+levantar. Con el final incluido no se podrían encadenar pases en hora punta.
+
+**3. `PATCH /api/reservations/:id` no comprobaba nada.** Escribía directo en la
+tabla: se podía editar una reserva y ponerla a las tres de la madrugada o encima
+de otra. Solo el POST validaba. Ahora revalida horario y solape cuando cambia
+fecha, hora, pax, mesa o duración — **con una excepción deliberada**: cambiar solo
+el estado (sentar, completar, anular) se salta la revisión, porque sentar a un
+comensal que ya está en la puerta no puede fallar porque el reloj diga que cerró.
+
+De paso se corrigió que el turno se calculaba con `b.date || "1970-01-01"`: editar
+solo la hora resolvía el turno contra una fecha inventada.
+
+### La duración sube al servidor
+
+Vivía solo en el `localStorage` del navegador, así que el backend no la conocía y
+las reservas de voz no participaban en el cálculo de solapes. Ahora es del
+restaurante: `restaurantes.duracion_reserva_min` (por defecto 120). Una reserva
+sin duración propia guarda `null` y **hereda** la del local, así que cambiarla en
+Configuración afecta también a las ya hechas. `escribir.duracionDe()` la busca
+sola en vez de pedirla por parámetro: hay cuatro caminos que crean reservas
+(panel, voz, WhatsApp, plataformas) y basta con que uno se olvide de pasarla para
+que sus reservas dejen de contar, en silencio.
+
+### Horario de servicio configurable
+
+El motor ya existía (`horario.js` + tabla `turnos`) y ya bloqueaba desde el 8 de
+agosto; lo que no había era forma de tocarlo sin SQL. Nuevo `GET/PUT
+/api/settings/turnos` y una tarjeta en Configuración, la primera de la pantalla.
+
+Detalle que hace que funcione o no: el PUT llama a `horario.invalidar(slug)`.
+Sin eso la caché de cinco minutos seguiría sirviendo el horario viejo, el usuario
+guardaría, probaría al momento y parecería que no ha servido de nada. Lo mismo en
+el navegador: `onHorarioGuardado` refresca los turnos del plano, porque el
+calendario se dibuja con los que se cargaron al arrancar.
+
+Se restringe `nombre` a `comida` | `cena` a propósito: `types.ts` declara
+`shift?: 'comida' | 'cena'` y la barra de turnos del plano se construye sobre eso.
+Se pueden tener varias franjas del mismo turno (comida L-V 13:00–16:00 y comida
+S-D 12:00–17:00), pero no inventar nombres. `hora_fin` es la **última hora
+reservable**, no el cierre de cocina, y la UI lo dice con esas palabras: quien
+configure 23:30 pensando que es el cierre serviría mesas hasta la 01:30.
+
+**A Vapi no se le tocó nada.** Marta no decide horarios: llama a una herramienta
+de la app, y es la app la que consulta `turnos`. Cambiar el horario en el panel lo
+respeta en la siguiente llamada. Es la mitad del motivo por el que se eligió la
+opción C en su día.
+
+### El calendario (`TimelineMesa.tsx`)
+
+Ocupación de una mesa en un día, en casillas de 15 minutos. **Solo se dibujan las
+horas en las que se abre**: el hueco entre comida y cena no sale en gris, no sale.
+Es la forma más clara de enseñar el horario y coincide con lo que el servidor va a
+aceptar. Los días sin turno dan un aviso de cerrado con el camino a Configuración.
+
+Además de los tramos ocupados marca los huecos **donde no cabe**: a las 20:00 con
+120 minutos no cabes si hay algo a las 21:00, aunque las 20:00 estén libres.
+Avisar después de elegir sería hacerle perder el tiempo a quien está delante.
+Reutiliza `horaDeSalida()` de `turnos.ts`, la misma con la que el plano calcula
+los pases. Pinta; no decide: el servidor revalida al guardar.
+
+### Los errores del servidor por fin se leen
+
+`api.ts` aplastaba el cuerpo del error contra un string y `App.tsx` mostraba
+«No se pudo guardar la reserva en Supabase. Revisa la conexión.» — que además era
+mentira. Ahora `ApiError` conserva `codigo`, `status` y `cuerpo`, y el panel
+enseña lo que dijo el backend: «Esa mesa ya la tiene Alberto en ese horario.»
+
+### Verificación (local, sin desplegar)
+
+Tres baterías nuevas, contra Supabase real y limpiando siempre lo que crean:
+
+- `scripts/test-solapes.js` — 12 comprobaciones de tramos, horario y reparto
+- `scripts/test-patch-reserva.js` — 9 sobre el PATCH, incluida la excepción de estados y el 404 entre restaurantes
+- `scripts/test-turnos-api.js` — 13 sobre validaciones y, la que importa, que la caché se invalida
+
+Las 34 en verde. Verificado además en el navegador: bloques ocupados con nombre y
+tramo, clic en un hueco que sincroniza el campo Hora, aviso de choque en rojo,
+rechazo real del servidor al forzarlo, aviso de cerrado al quitar el miércoles, y
+el calendario refrescándose sin recargar la página.
+
+**Dos fallos encontrados durante las pruebas y corregidos**:
+
+1. Tras guardar el horario, el calendario seguía con el horario viejo hasta el
+   siguiente sondeo. Mismo problema que la caché del servidor, pero en el
+   navegador. Se resolvió con `onHorarioGuardado`.
+2. **Las reservas que pasaban de medianoche no contaban como ocupadas.** El
+   calendario calculaba el final con `horaDeSalida()`, que devuelve la hora ya
+   envuelta ("01:30"), y al reconvertirla daba **90 minutos en vez de 1530**. Una
+   mesa que entraba a las 23:30 aparecía libre. Ahora el final se suma en crudo,
+   igual que en el servidor; envolver es cosa de la función que pinta.
+
+### La cocina cierra, la sala no
+
+Aclaración del restaurante después de la primera entrega: el horario es de
+**servicio de cocina**, no de cierre del local. Una mesa que entra a la última
+hora sigue ocupada después, y el local sigue abierto.
+
+El backend ya se comportaba así (el horario solo controla la hora de ENTRADA; la
+ocupación no se recorta), y se comprobó: una reserva a las 23:30 con 2 h se
+guarda como 23:30→01:30, y una sobremesa de 4 h hasta las 03:00, ambas aceptadas.
+Lo que estaba mal era lo que la pantalla decía. Ahora:
+
+- La tarjeta se llama **«Horario de servicio de cocina»** y el campo dice
+  «Última entrada, no el cierre».
+- Cada franja del calendario se rotula «últimas entradas».
+- Cuando una reserva se alarga más allá de su franja se anota debajo: *«↳ Lucía
+  sigue en mesa hasta las 01:30, después de la última entrada de cena»*. Sin esto
+  la mesa desaparecía al llegar al borde de la rejilla y parecía libre.
+- El pie añade «acaba después del cierre de cocina, y no pasa nada», para que
+  nadie crea que va a fallar al guardar.
+
+Tres comprobaciones nuevas en `test-solapes.js` fijan este comportamiento (15 en
+total en ese script).
+
+**Pendiente**: desplegar (a la espera del visto bueno).
+
+**Limpieza**: se borraron las 8 reservas de prueba residuales de sesiones
+anteriores («Prueba Dialecto», «Prueba Produccion», del 28/07 y 09/08). La base
+queda con 23 reservas, todas reales.
+
+**Fuera de alcance, decidido a propósito**: turnos que cruzan medianoche (exigen
+otro modelo de datos, no un parche), festivos y cierres puntuales, y arrastrar
+bloques en el calendario para mover una reserva.
+
+---
+
 ## Sesión 2026-08-09 · Vapi apuntado a la app, y revisión de seguridad
 
 **Vapi ya habla con la app.** El asistente de El Rincón Venezolano

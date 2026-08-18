@@ -16,11 +16,34 @@ const lectura = require("./reservas");
 const allergens = require("../allergens");
 const horario = require("../horario");
 const phone = require("../phone");
+const registry = require("./restaurantes");
 
 const T_RESERVAS = "reservas";
 const T_MESAS = "mesas";
 const T_CLIENTES = "clientes";
 const T_HISTORIAL = "historial_reservas";
+
+// Último recurso si el restaurante no se puede leer. Dos horas es lo que ya
+// usaba el panel por defecto, así que no cambia el comportamiento de nadie.
+const DURACION_DEFECTO = 120;
+
+/**
+ * Cuánto se supone que ocupa una mesa en este local.
+ *
+ * Se busca aquí dentro y no se pide por parámetro a propósito: hay cuatro
+ * caminos que crean reservas (panel, voz, WhatsApp, plataformas externas) y
+ * basta con que uno se olvide de pasarla para que sus reservas dejen de contar
+ * en el cálculo de solapes, en silencio. El directorio ya va cacheado un minuto.
+ */
+async function duracionDe(ctx) {
+  try {
+    const local = await registry.porSlug(ctx.restaurante);
+    return local?.duracionReservaMin || DURACION_DEFECTO;
+  } catch (err) {
+    console.error("[repo] no se pudo leer la duración del local:", err.message);
+    return DURACION_DEFECTO;
+  }
+}
 
 /** "RES-123456-789". Es lo que el cliente apunta y luego dice por teléfono. */
 function generarCodigo() {
@@ -35,24 +58,72 @@ function aMinutos(hora) {
 }
 
 /**
- * Primera mesa libre con capacidad suficiente a esa hora.
+ * ¿Se pisan dos tramos de tiempo? [aIni, aFin) contra [bIni, bFin).
  *
- * `excluirId` sirve al modificar una reserva: su propia mesa no debe contarse
- * como ocupada, o cambiar solo el número de personas sin mover la hora fallaría
+ * El final va EXCLUIDO a propósito: una reserva que termina a las 19:00 y otra
+ * que empieza a las 19:00 no chocan, la mesa se acaba de levantar. Con el final
+ * incluido no se podría encadenar un pase detrás de otro, que es justo lo que un
+ * restaurante quiere hacer en hora punta.
+ */
+function seSolapan(aIni, aFin, bIni, bFin) {
+  return aIni < bFin && bIni < aFin;
+}
+
+/** Las que ocupan mesa de verdad. Anuladas y terminadas ya no estorban. */
+function ocupaMesa(fila) {
+  return fila.status === "confirmed" || fila.status === "seated";
+}
+
+/**
+ * Tramos ocupados de un día, mesa por mesa.
+ *
+ * Una reserva no es un instante sino un tramo: las 17:00 con dos horas ocupan
+ * hasta las 19:00. Antes esto se comparaba por hora de inicio exacta, así que
+ * una reserva a las 18:00 se colaba encima de la de las 17:00 sin que nadie
+ * dijera nada.
+ *
+ * `duracionDefecto` es la del restaurante: las reservas que entran por teléfono
+ * no traen duración propia, y sin este respaldo no participarían en el cálculo.
+ */
+async function tramosOcupados(ctx, { fecha, duracionDefecto, excluirId = null }) {
+  const filas = await db.listar(ctx, T_RESERVAS, { filtros: { fecha } });
+  return filas
+    .filter(ocupaMesa)
+    .filter((r) => r.mesa_id != null)
+    .filter((r) => String(r.id) !== String(excluirId))
+    .map((r) => {
+      const ini = aMinutos(r.hora);
+      return {
+        mesaId: String(r.mesa_id),
+        nombre: r.nombre || "",
+        ini,
+        fin: ini + (Number(r.duracion_min) || duracionDefecto),
+      };
+    });
+}
+
+/**
+ * Primera mesa libre con capacidad suficiente durante todo el tramo.
+ *
+ * `excluirId` sirve al modificar una reserva: su propio tramo no debe contarse
+ * como ocupado, o cambiar solo el número de personas sin mover la hora fallaría
  * siempre por chocar la reserva consigo misma.
  */
-async function buscarMesaLibre(ctx, { fecha, hora, personas, excluirId = null }) {
-  const [mesas, ocupadas] = await Promise.all([
+async function buscarMesaLibre(ctx, { fecha, hora, personas, duracion, excluirId = null }) {
+  // La duración de ESTA reserva y la que se supone a las que ya están son dos
+  // cosas distintas: que alguien pida una mesa cuatro horas no alarga las
+  // reservas ajenas que no declararon la suya.
+  const duracionDefecto = await duracionDe(ctx);
+  const ini = aMinutos(hora);
+  const fin = ini + (Number(duracion) || duracionDefecto);
+
+  const [mesas, tramos] = await Promise.all([
     db.listar(ctx, T_MESAS, { orden: "capacidad.asc" }),
-    db.listar(ctx, T_RESERVAS, { filtros: { fecha, status: "confirmed" } }),
+    tramosOcupados(ctx, { fecha, duracionDefecto, excluirId }),
   ]);
 
   const enUso = new Set(
-    ocupadas
-      .filter((r) => String(r.id) !== String(excluirId))
-      // Solo estorban las reservas de esa misma hora: la mesa se libera después.
-      .filter((r) => aMinutos(r.hora) === aMinutos(hora))
-      .map((r) => String(r.mesa_id))
+    tramos.filter((t) => seSolapan(ini, fin, t.ini, t.fin)).map((t) => t.mesaId)
   );
 
   // La más pequeña que sirva: sentar a dos personas en la mesa de ocho deja el
@@ -61,6 +132,28 @@ async function buscarMesaLibre(ctx, { fecha, hora, personas, excluirId = null })
     mesas.find((m) => m.capacidad >= personas && m.estado !== "Fuera de servicio" && !enUso.has(String(m.id))) ||
     null
   );
+}
+
+/**
+ * ¿Está libre ESTA mesa concreta durante todo el tramo?
+ *
+ * Es lo que hace falta cuando la mesa la elige una persona en el panel: ahí no
+ * se busca "alguna libre", se pregunta por la que ha señalado con el dedo.
+ *
+ * Devuelve { libre, choca? } — el nombre de quien la ocupa sirve para decirle a
+ * quien está delante con quién está chocando, no solo que no puede.
+ */
+async function mesaLibre(ctx, { fecha, hora, duracion, mesaId, excluirId = null }) {
+  const duracionDefecto = await duracionDe(ctx);
+  const ini = aMinutos(hora);
+  const fin = ini + (Number(duracion) || duracionDefecto);
+
+  const tramos = await tramosOcupados(ctx, { fecha, duracionDefecto, excluirId });
+  const choque = tramos.find(
+    (t) => t.mesaId === String(mesaId) && seSolapan(ini, fin, t.ini, t.fin)
+  );
+
+  return { libre: !choque, choca: choque ? choque.nombre : null };
 }
 
 /** Reserva activa del mismo cliente ese día y turno, si la hay. */
@@ -106,6 +199,12 @@ async function crearReserva(ctx, datos) {
   const {
     fecha, hora, personas, nombre, telefono = "",
     notas = "", canal = "panel", codigo = "", lopd = false, externalId = null,
+    // Mesa señalada a dedo desde el panel. Sin ella se busca la primera libre,
+    // que es lo que necesitan la voz y WhatsApp.
+    mesaId = null,
+    // Duración propia de esta reserva. `null` = hereda la del local, y sigue
+    // heredándola si el local la cambia mañana.
+    duracionMin = null,
   } = datos;
 
   if (!fecha || !hora || !personas || !nombre) {
@@ -128,10 +227,20 @@ async function crearReserva(ctx, datos) {
     }
   }
 
-  // 3. Mesa
-  const mesa = await buscarMesaLibre(ctx, { fecha, hora, personas });
-  if (!mesa && !externalId) {
-    return { creada: false, motivo: "sin_mesa" };
+  // 3. Mesa. Si viene señalada, se comprueba ESA; si no, se busca cualquiera.
+  let mesa = null;
+  if (mesaId) {
+    const { libre, choca } = await mesaLibre(ctx, { fecha, hora, duracion: duracionMin, mesaId });
+    if (!libre) return { creada: false, motivo: "mesa_ocupada", choca };
+    mesa = await db.obtener(ctx, T_MESAS, mesaId);
+    // Una mesa de otro restaurante no existe para este: no se cae al reparto
+    // automático, porque eso guardaría la reserva en un sitio que nadie pidió.
+    if (!mesa) return { creada: false, motivo: "mesa_no_encontrada" };
+  } else {
+    mesa = await buscarMesaLibre(ctx, { fecha, hora, personas, duracion: duracionMin });
+    if (!mesa && !externalId) {
+      return { creada: false, motivo: "sin_mesa" };
+    }
   }
 
   const codigoFinal = codigo || generarCodigo();
@@ -150,6 +259,7 @@ async function crearReserva(ctx, datos) {
     canal,
     origen: canal,
     lopd_acepta: Boolean(lopd),
+    duracion_min: duracionMin || null,
     // Sin mesa NO se rechaza cuando viene de fuera: la plataforma ya se la
     // vendió al cliente, y dejarla sin asignar es mejor que perderla.
     mesa_id: mesa ? mesa.id : null,
@@ -176,15 +286,19 @@ async function crearReserva(ctx, datos) {
 }
 
 /** Cambia fecha, hora o personas. La reserva solo se toca si hay dónde ponerla. */
-async function modificarReserva(ctx, { codigo, nuevaFecha, nuevaHora, nuevasPersonas, canal = "panel" }) {
+async function modificarReserva(ctx, { codigo, nuevaFecha, nuevaHora, nuevasPersonas, nuevaMesaId, nuevaDuracion, canal = "panel" }) {
   const actual = await lectura.reservaPorCodigo(ctx, codigo);
   if (!actual) return { modificada: false, motivo: "no_encontrada" };
 
   const fecha = nuevaFecha || actual.date;
   const hora = nuevaHora || actual.time;
   const personas = Number(nuevasPersonas) || actual.party_size;
+  const duracion = nuevaDuracion || actual.duration_min || null;
 
-  if (fecha === actual.date && hora === actual.time && personas === actual.party_size) {
+  if (
+    fecha === actual.date && hora === actual.time && personas === actual.party_size &&
+    !nuevaMesaId && !nuevaDuracion
+  ) {
     return { modificada: false, motivo: "sin_cambios", reserva: actual };
   }
 
@@ -193,17 +307,30 @@ async function modificarReserva(ctx, { codigo, nuevaFecha, nuevaHora, nuevasPers
     return { modificada: false, motivo: "fuera_de_horario", horario: apertura, reserva: actual };
   }
 
-  const mesa = await buscarMesaLibre(ctx, { fecha, hora, personas, excluirId: actual.id });
-  if (!mesa) {
-    // La original se queda como estaba: es mejor que el cliente conserve su
-    // reserva a que la pierda por un cambio que no se pudo hacer.
-    return { modificada: false, motivo: "sin_mesa", reserva: actual };
+  let mesa = null;
+  if (nuevaMesaId) {
+    const { libre, choca } = await mesaLibre(ctx, {
+      fecha, hora, duracion, mesaId: nuevaMesaId, excluirId: actual.id,
+    });
+    if (!libre) return { modificada: false, motivo: "mesa_ocupada", choca, reserva: actual };
+    mesa = await db.obtener(ctx, T_MESAS, nuevaMesaId);
+    if (!mesa) return { modificada: false, motivo: "mesa_no_encontrada", reserva: actual };
+  } else {
+    mesa = await buscarMesaLibre(ctx, { fecha, hora, personas, duracion, excluirId: actual.id });
+    if (!mesa) {
+      // La original se queda como estaba: es mejor que el cliente conserve su
+      // reserva a que la pierda por un cambio que no se pudo hacer.
+      return { modificada: false, motivo: "sin_mesa", reserva: actual };
+    }
   }
 
   const fila = await db.actualizar(ctx, T_RESERVAS, actual.id, {
     fecha, hora, personas,
     turno: apertura.turno || actual.shift,
     mesa_id: mesa.id,
+    // Solo si se pidió cambiarla: si no, se deja como estaba (incluido el `null`
+    // que significa "la que diga el local").
+    ...(nuevaDuracion ? { duracion_min: nuevaDuracion } : {}),
   });
 
   await registrarHistorial(ctx, {
@@ -269,6 +396,8 @@ module.exports = {
   cancelarReserva,
   upsertCliente,
   buscarMesaLibre,
+  mesaLibre,
+  duracionDe,
   registrarHistorial,
-  _internos: { generarCodigo, aMinutos, buscarDuplicada },
+  _internos: { generarCodigo, aMinutos, buscarDuplicada, seSolapan, tramosOcupados },
 };
