@@ -214,7 +214,24 @@ Lo que estaba mal era lo que la pantalla decía. Ahora:
 Tres comprobaciones nuevas en `test-solapes.js` fijan este comportamiento (15 en
 total en ese script).
 
-**Pendiente**: desplegar (a la espera del visto bueno).
+**Desplegado** el 2026-08-19 (commit `ece4940`, merge fast-forward a `main`).
+
+Verificado en producción por HTTP: los 9 casos del PATCH, el endpoint nuevo de
+horario, la mesa respetada, los choques por tramo, el rechazo fuera de horario
+con su frase de apertura, y la sobremesa que pasa de medianoche. Verificado
+además en el panel real: bloques ocupados con nombre y tramo, la nota de cola
+(«sigue en mesa hasta las 01:30»), el aviso de choque y el mensaje del servidor
+al forzar el guardado.
+
+**Lo que NO se pudo verificar end-to-end**: el webhook `/vapi/tools`. Su secreto
+de producción no está en el `.env` local —y así debe ser—, así que devuelve 401
+desde aquí. La lógica de horario es compartida y sí quedó comprobada por la API
+del panel; queda pendiente una llamada real a Marta como comprobación definitiva.
+
+**Encontrado de paso, ajeno a este cambio**: el simulador de llamada
+(`POST /api/call/agent`) responde 500 en producción porque la `ANTHROPIC_API_KEY`
+de Railway está caducada («API key is invalid»). No afecta al canal de voz real,
+que va por Vapi, pero deja el simulador del panel inservible.
 
 **Limpieza**: se borraron las 8 reservas de prueba residuales de sesiones
 anteriores («Prueba Dialecto», «Prueba Produccion», del 28/07 y 09/08). La base
