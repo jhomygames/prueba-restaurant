@@ -11,6 +11,65 @@ valor del registro está en poder mirar atrás y entender por qué algo es como 
 
 ---
 
+## Sesión 2026-08-20 (tarde) · La agenda vertical, y la mesa que quedaba bloqueada
+
+**El fallo que reportó el restaurante**: si una mesa ya tenía una reserva, no se
+le podía añadir otra. Al pulsar la mesa el panel abría SIEMPRE la reserva
+existente para editarla, así que una mesa con una comida a las 14:00 quedaba
+bloqueada el día entero: no había forma de meterle la cena.
+
+Es un fallo mío del cambio anterior: se construyó el calendario para VER los
+pases múltiples y se dejó cerrada la puerta para CREARLOS. Justo el caso para el
+que se hizo todo.
+
+**La causa**: `getActiveReservationForSelectedTable()` devuelve la primera
+reserva viva de la mesa y `ReservationModal` la tomaba directo de la prop, sin
+forma de cambiar de modo sin cerrar la ventana.
+
+**El arreglo**: el modal ahora tiene estado propio, `reservaActiva`. Nace de la
+prop, pero a partir de ahí manda lo que el usuario elija dentro. Con eso se puede
+saltar de una reserva a otra, o a una nueva, sin cerrar nada.
+
+### El calendario pasa a ser una agenda vertical
+
+Se rehízo `TimelineMesa` como pidió el restaurante: columna de horas en filas de
+30 minutos y bloques dibujados **a escala** encima, en vez de la rejilla
+horizontal de fichas anterior. La rejilla funcionaba, pero no se parecía a la
+agenda que habían enseñado como referencia; esa decisión se había tomado sin
+consultarles.
+
+Es interactiva en los dos sentidos:
+
+- pulsar una hora libre lleva la reserva que se está creando a esa hora
+- pulsar un bloque ocupado abre ESA reserva para editarla
+- un botón «Nueva reserva en esta mesa» empieza una desde cero
+
+Se pliega desde la cabecera, que siempre enseña el resumen («2 reservas ese
+día»), porque desplegada ocupa bastante alto.
+
+**Detalle que se coló y se corrigió de paso**: al crear una reserva nueva el
+formulario saltaba a la fecha de HOY. Si estabas viendo el plano del sábado y
+añadías una reserva, nacía para hoy. Ahora hereda el día que se está mirando
+(prop `fechaPorDefecto`).
+
+### Verificación (local)
+
+Reproducido el caso exacto del restaurante: mesa con comida a las 14:00–16:00.
+
+- Al abrir la mesa sigue abriendo esa reserva (correcto, es lo más frecuente)
+- «Nueva reserva en esta mesa» → título cambia, formulario en blanco, **fecha
+  intacta**, y el bloque de la comida sigue visible como contexto
+- Pulsar 21:30 en la agenda → el campo Hora pasa a 21:30
+- Pulsar el bloque de la comida → vuelve a editarla
+- Guardada la cena: **las dos reservas quedan en la Mesa 1** (mesa_id 17),
+  comprobado en Supabase
+- Con las dos puestas, la agenda muestra ambos bloques y una tercera a las 20:30
+  avisa: «De 20:30 a 22:30 choca con la reserva de ZZUI Cena (21:00–23:00)»
+- Sin errores en consola. Datos de prueba borrados.
+
+
+---
+
 ## Sesión 2026-08-20 · Limpieza de los flujos huérfanos de n8n
 
 Quedaban **16 workflows activos** en n8n, ocho parejas «original + copy», restos de

@@ -1567,6 +1567,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
         reservations={reservations}
         turnos={turnos}
         defaultSeatedDuration={defaultSeatedDuration}
+        fechaPorDefecto={selectedDate}
         onSaveReservation={handleSaveReservation}
         onCancelReservation={handleCancelReservation}
         onSeatedReservation={handleSeatedReservation}

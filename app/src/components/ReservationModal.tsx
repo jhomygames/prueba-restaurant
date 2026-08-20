@@ -17,6 +17,8 @@ interface ReservationModalProps {
   /** Franjas de servicio del local, para saber qué horas se pueden pintar. */
   turnos: Turno[];
   defaultSeatedDuration: number;
+  /** Día que se está mirando en el plano. Una reserva nueva nace ahí, no en hoy. */
+  fechaPorDefecto: string;
   onSaveReservation: (reservation: Omit<Reservation, 'id' | 'createdAt'> & { id?: string }) => void;
   onCancelReservation: (id: string) => void;
   onSeatedReservation: (id: string) => void;
@@ -31,6 +33,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
   reservations,
   turnos,
   defaultSeatedDuration,
+  fechaPorDefecto,
   onSaveReservation,
   onCancelReservation,
   onSeatedReservation,
@@ -51,27 +54,46 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
   const [selectedTemplate, setSelectedTemplate] = useState<string>('whatsapp_standard');
   const [simulatedSendSuccess, setSimulatedSendSuccess] = useState<boolean>(false);
 
+  /**
+   * Qué reserva se está gestionando AHORA. Empieza siendo la que traía el panel,
+   * pero puede cambiar sin cerrar la ventana: la agenda deja saltar de una
+   * reserva a otra, o a una nueva.
+   *
+   * Antes esto era solo la prop y ahí estaba el fallo: una mesa con reserva a
+   * las 14:00 abría siempre esa, así que no había forma de añadirle la cena. La
+   * mesa quedaba bloqueada el día entero.
+   */
+  const [reservaActiva, setReservaActiva] = useState<Reservation | null>(null);
+
+  // Al abrir la ventana se parte de lo que diga el panel; a partir de ahí manda
+  // lo que el usuario elija dentro.
+  useEffect(() => {
+    if (isOpen) setReservaActiva(activeReservation);
+  }, [isOpen, activeReservation]);
+
   // Load/reset form based on active reservation
   useEffect(() => {
     if (isOpen) {
       setShowMsgSimulator(false);
       setSimulatedSendSuccess(false);
       
-      if (activeReservation) {
-        setCustomerName(activeReservation.customerName);
-        setCustomerPhone(activeReservation.customerPhone);
-        setDate(activeReservation.date);
-        setTime(activeReservation.time);
-        setPax(activeReservation.pax);
-        setNotes(activeReservation.notes);
-        setAllergies(activeReservation.allergies);
-        setAutoConfirmMessage(activeReservation.autoConfirmMessage);
-        setCustomDurationMinutes(activeReservation.customDurationMinutes || 120);
+      if (reservaActiva) {
+        setCustomerName(reservaActiva.customerName);
+        setCustomerPhone(reservaActiva.customerPhone);
+        setDate(reservaActiva.date);
+        setTime(reservaActiva.time);
+        setPax(reservaActiva.pax);
+        setNotes(reservaActiva.notes);
+        setAllergies(reservaActiva.allergies);
+        setAutoConfirmMessage(reservaActiva.autoConfirmMessage);
+        setCustomDurationMinutes(reservaActiva.customDurationMinutes || 120);
       } else {
         // Create new reservation defaults
         setCustomerName('');
         setCustomerPhone('');
-        setDate(new Date().toISOString().split('T')[0]); // Default today
+        // El día que se está mirando, no hoy: si el usuario está en el plano
+        // del sábado y añade una reserva, es para el sábado.
+        setDate(fechaPorDefecto || new Date().toISOString().split('T')[0]);
         setTime('20:30'); // Default dinner peak
         setPax(table ? table.seats : 4);
         setNotes('');
@@ -82,7 +104,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
         setCustomDurationMinutes(defaultSeatedDuration);
       }
     }
-  }, [isOpen, activeReservation, table, defaultSeatedDuration]);
+  }, [isOpen, reservaActiva, table, defaultSeatedDuration, fechaPorDefecto]);
 
   /**
    * Lo que ya ocupa esta mesa ese día. Depende de `date` a propósito: si se
@@ -90,14 +112,14 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
    * reservas del día nuevo, no seguir enseñando las del anterior.
    */
   const reservasDeEstaMesa = useMemo(() => {
-    const mesaId = table?.id ?? activeReservation?.tableId ?? '';
+    const mesaId = table?.id ?? reservaActiva?.tableId ?? '';
     if (!mesaId) return [];
     return reservations.filter((r) => r.tableId === mesaId && r.date === date && estaViva(r));
-  }, [reservations, table?.id, activeReservation?.tableId, date]);
+  }, [reservations, table?.id, reservaActiva?.tableId, date]);
 
   // Sin mesa solo tiene sentido si estamos editando una reserva existente
   // (p. ej. una reserva del calendario cuya mesa fue eliminada del plano).
-  if (!isOpen || (!table && !activeReservation)) return null;
+  if (!isOpen || (!table && !reservaActiva)) return null;
 
   const handleQuickSeating = () => {
     if (!table) return;
@@ -134,14 +156,14 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
     if (!customerName.trim()) return;
 
     onSaveReservation({
-      ...(activeReservation ? { id: activeReservation.id, seatedAt: activeReservation.seatedAt } : {}),
+      ...(reservaActiva ? { id: reservaActiva.id, seatedAt: reservaActiva.seatedAt } : {}),
       customerName: customerName.trim(),
       customerPhone: customerPhone.trim() || '+56 9 1234 5678',
       date,
       time,
       pax,
-      tableId: table ? table.id : (activeReservation?.tableId ?? ''),
-      status: activeReservation ? activeReservation.status : 'confirmed',
+      tableId: table ? table.id : (reservaActiva?.tableId ?? ''),
+      status: reservaActiva ? reservaActiva.status : 'confirmed',
       notes: notes.trim(),
       allergies,
       autoConfirmMessage,
@@ -190,7 +212,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
                   {table ? table.name : 'Sin mesa asignada'}
                 </span>
                 <h3 className="font-sans font-bold text-sm text-brand-text">
-                  {activeReservation ? 'Gestionar Reserva' : 'Nueva Reserva de Mesa'}
+                  {reservaActiva ? 'Gestionar Reserva' : 'Nueva Reserva de Mesa'}
                 </h3>
               </div>
               <button
@@ -206,7 +228,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
             <div className="flex-1 p-5 overflow-y-auto space-y-4">
               
               {/* Quick Walk-in Option */}
-              {!activeReservation && table && (
+              {!reservaActiva && table && (
                 <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shrink-0">
                   <div className="space-y-0.5">
                     <h4 className="text-xs font-sans font-bold text-emerald-300 flex items-center gap-1.5">
@@ -324,8 +346,10 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
                 duracionPorDefecto={defaultSeatedDuration}
                 horaSeleccionada={time}
                 duracionSeleccionada={customDurationMinutes}
-                reservaEditandoId={activeReservation?.id}
+                reservaEditandoId={reservaActiva?.id}
                 onElegirHora={setTime}
+                onElegirReserva={setReservaActiva}
+                onNuevaReserva={() => setReservaActiva(null)}
               />
 
               {/* Diet / Allergies Multi-Selection */}
@@ -437,10 +461,10 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
                 </div>
 
                 {/* If the reservation is already seated, show a live ticking countdown in the modal */}
-                {activeReservation && activeReservation.status === 'seated' && activeReservation.seatedAt && (
+                {reservaActiva && reservaActiva.status === 'seated' && reservaActiva.seatedAt && (
                   <div className="mt-2 pt-2 border-t border-brand-outline/60 flex items-center justify-between text-[11px] bg-brand-surface/45 p-2 rounded-lg border border-brand-outline">
-                    <span className="text-brand-muted">Sentado: <strong className="text-brand-text font-mono">{new Date(activeReservation.seatedAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</strong></span>
-                    <LocalModalCountdown seatedAt={activeReservation.seatedAt} customDurationMinutes={customDurationMinutes} />
+                    <span className="text-brand-muted">Sentado: <strong className="text-brand-text font-mono">{new Date(reservaActiva.seatedAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</strong></span>
+                    <LocalModalCountdown seatedAt={reservaActiva.seatedAt} customDurationMinutes={customDurationMinutes} />
                   </div>
                 )}
               </div>
@@ -450,21 +474,21 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
             <div className="p-4 bg-brand-surface-low border-t border-brand-outline flex flex-wrap gap-3 shrink-0">
               
               {/* Existing Reservation Operations */}
-              {activeReservation && (
+              {reservaActiva && (
                 <div className="flex gap-2 w-full sm:w-auto border-b sm:border-b-0 sm:border-r border-brand-outline pb-3 sm:pb-0 pr-0 sm:pr-3 mb-1 sm:mb-0">
-                  {activeReservation.status === 'confirmed' && (
+                  {reservaActiva.status === 'confirmed' && (
                     <button
                       type="button"
-                      onClick={() => onSeatedReservation(activeReservation.id)}
+                      onClick={() => onSeatedReservation(reservaActiva.id)}
                       className="flex-1 sm:flex-initial bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-xs px-3 py-2 rounded-lg font-bold font-sans cursor-pointer transition-all"
                     >
                       Sentar Comensal
                     </button>
                   )}
-                  {activeReservation.status === 'seated' && (
+                  {reservaActiva.status === 'seated' && (
                     <button
                       type="button"
-                      onClick={() => onCompleteReservation(activeReservation.id)}
+                      onClick={() => onCompleteReservation(reservaActiva.id)}
                       className="flex-1 sm:flex-initial bg-brand-primary/10 hover:bg-brand-primary/20 border border-brand-primary/30 text-brand-primary text-xs px-3 py-2 rounded-lg font-bold font-sans cursor-pointer transition-all"
                     >
                       Servicio Finalizado
@@ -474,7 +498,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
                     type="button"
                     onClick={() => {
                       if (confirm('¿Seguro de cancelar esta reserva?')) {
-                        onCancelReservation(activeReservation.id);
+                        onCancelReservation(reservaActiva.id);
                         onClose();
                       }
                     }}
@@ -498,7 +522,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
                   </button>
                 )}
                 
-                {!activeReservation && table && (
+                {!reservaActiva && table && (
                   <button
                     type="button"
                     onClick={() => {
@@ -530,7 +554,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
                   className="bg-brand-primary text-brand-surface font-sans font-bold text-xs px-4 py-2 rounded-lg shadow-lg hover:bg-brand-primary/90 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
                 >
                   <Check className="w-4 h-4 stroke-[3]" />
-                  {activeReservation ? 'Guardar Cambios' : 'Agendar Reserva'}
+                  {reservaActiva ? 'Guardar Cambios' : 'Agendar Reserva'}
                 </button>
               </div>
 
