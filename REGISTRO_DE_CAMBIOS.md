@@ -67,6 +67,12 @@ Reproducido el caso exacto del restaurante: mesa con comida a las 14:00–16:00.
   avisa: «De 20:30 a 22:30 choca con la reserva de ZZUI Cena (21:00–23:00)»
 - Sin errores en consola. Datos de prueba borrados.
 
+**Desplegado** el 2026-08-20 (commit 3bac8a3). Verificado en produccion: dos pases
+en la misma mesa se crean (14:00-16:00 y 21:00-23:00), un tercero a las 22:00 se
+rechaza con "Esa mesa ya la tiene ZZPROD Cena en ese horario", y en el panel real
+el ciclo completo funciona: abrir la mesa -> Nueva reserva (fecha intacta) ->
+elegir hora en la agenda -> volver a la reserva anterior pulsando su bloque.
+
 
 ---
 
