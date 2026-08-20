@@ -8,6 +8,52 @@ al principio, con la fecha, qué se hizo, qué se verificó y qué quedó pendie
 Los fallos encontrados se anotan aunque se hayan corregido en el momento — el
 valor del registro está en poder mirar atrás y entender por qué algo es como es.
 
+
+---
+
+## Sesión 2026-08-20 · Limpieza de los flujos huérfanos de n8n
+
+Quedaban **16 workflows activos** en n8n, ocho parejas «original + copy», restos de
+la migración a la app y de un intento paralelo abandonado el 30 de julio. Uno de
+ellos (WF15) es el que se disparó en bucle y quemó créditos.
+
+**Cómo se distinguió lo vivo de lo muerto**, que era lo delicado: los flujos que
+la app llama de verdad tienen una ruta de webhook **con nombre**; los duplicados
+escuchan en un **UUID** que no llama nadie. Se comprobó contra el código: la app
+solo invoca tres URLs, todas en `src/services/notificaciones.js`.
+
+**Se conservan activos** (los tres que usa la app para avisar por WhatsApp):
+
+| Flujo | Ruta |
+|---|---|
+| WF07 - confirmacion_whatsapp | `/webhook/confirmacion-whatsapp` |
+| WF05b - notificacion_cancelacion | `/webhook/notificacion-cancelacion` |
+| WF06b - notificacion_modificacion | `/webhook/notificacion-modificacion` |
+
+**Desactivados y etiquetados «no está en uso»** (13): WF01, WF02, WF05, WF06 y
+WF15 —herramientas del agente de voz de cuando Marta hablaba con n8n, hoy las
+sirve la app en `/vapi/tools`— más los ocho duplicados «copy».
+
+Se desactivan, **no se borran**: siguen ahí para consultarlos. Mover a una carpeta
+no se pudo hacer desde aquí (n8n no expone crear ni mover carpetas por MCP);
+queda pendiente arrastrarlos a mano en la interfaz.
+
+**Verificación sin gastar ejecuciones**: se hizo un GET a los tres webhooks vivos.
+Los tres responden «This webhook is not registered for GET requests. Did you mean
+to make a POST request?», que prueba que siguen registrados para POST sin
+dispararlos —lanzarlos habría enviado WhatsApps reales a clientes.
+
+**Dos cosas que salieron de paso:**
+
+1. Los nodos de los flujos desactivados llevan la `service_role` de Supabase
+   **en claro** en las cabeceras. Desactivarlos reduce la superficie, pero no
+   sustituye a rotar la clave (pendiente, pospuesto a propósito).
+2. Las copias incluían una corrección de formato de teléfono (`aE164`) que los
+   originales no tienen. **No es un fallo latente**: la app ya normaliza a E.164
+   antes de enviar (`notificaciones.js:49`), así que los vivos reciben el número
+   bien formado. La corrección de la copia era de cuando eso no pasaba aguas
+   arriba.
+
 ---
 
 ## Índice del sistema (estado actual)
