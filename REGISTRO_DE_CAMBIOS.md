@@ -11,6 +11,74 @@ valor del registro está en poder mirar atrás y entender por qué algo es como 
 
 ---
 
+## Sesión 2026-09-02 · La llamada de los 9 del cumpleaños, y la silla que faltaba
+
+Se pidió verificar la llamada de Vapi `b8d57e4a-925b-48f9-97c2-e49c44ec30ae`. Ese
+ID no existe en la cuenta del restaurante (solo hay 2 llamadas en total), pero la
+del 1 de septiembre a las 15:52 coincide con la descripción: cumpleaños, 9
+personas, viernes. Con esa se investigó.
+
+### Lo que pasó en la llamada real
+
+1. Marta consulta 22:00 para 9 → `disponible:false`, correcto.
+2. **Se inventa que a las 21:00 sí hay mesa, sin haber llamado a `checkAvailability`
+   para esa hora.** No es un fallo de la app: es el modelo improvisando.
+3. Intenta guardar a las 21:00 → `sin_mesa`. Prueba 20:30 → también `sin_mesa`.
+4. El cliente, ya molesto («¿qué pasó? antes me dijiste que había disponibilidad»),
+   recibe al fin la explicación real y una oferta de pasar con el equipo.
+5. El cliente rechaza y cuelga sin reservar. **Reserva perdida.** Sin datos
+   huérfanos en la base — la reserva nunca llegó a guardarse.
+
+### Por qué: la lógica «unir mesas / silla extra» no existía
+
+Se revisó el código (`escribir.js`/`agente.js`), el guion en vivo de Marta (27.892
+caracteres, sin una sola mención a 9 personas, sillas o unir mesas) y el registro
+de cambios completo. **Lo estipulado nunca se construyó**, ni en el backend ni en
+el guion. El único mecanismo real era `GRUPO_GRANDE` (más de 10 → humano), que 9
+no dispara — por eso el sistema intentaba una mesa individual, fallaba siempre
+(la mesa más grande tiene 8 plazas), y Marta acabó ofreciendo el escalado por su
+cuenta, no por una regla codificada.
+
+### La solución, acordada con el restaurante
+
+Se preguntó el criterio exacto: **no combinar mesas**, solo usar la mesa más
+cercana por debajo añadiendo como mucho una silla. `buscarMesaLibre()` en
+`escribir.js` ahora, cuando ninguna mesa llega sola, prueba la de mayor capacidad
+que quede a 1 plaza o menos del grupo (`SILLAS_EXTRA_MAX = 1`, documentado en el
+código como estipulado). Si la usa, lo anota:
+
+- en las **notas de la reserva**, para el personal: *"(Mesa 6: añadir 1 silla
+  extra para el grupo de 9)"*
+- en el **mensaje que Marta dice**, tanto al comprobar disponibilidad como al
+  confirmar — así lo que promete por teléfono es lo mismo que se guarda, y no se
+  repite el fallo de esta llamada (inventar disponibilidad sin comprobarla).
+
+No se tocó el guion externo de Marta (`vapi_guion_externo: true`); el `mensaje`
+que ella lee es generado por la app, no por su prompt.
+
+### Un hueco que queda, señalado y no cerrado
+
+Con el tope de 1 silla, **10 personas sigue sin caber en ninguna mesa** (8 + 1 =
+9, no 10) y **10 tampoco dispara `GRUPO_GRANDE`** (que exige más de 10). Un grupo
+de exactamente 10 sufre hoy el mismo fallo que el de 9 sufría antes de este
+cambio. No se tocó porque el restaurante pidió específicamente la solución de 1
+silla para el caso de 9; ampliar el margen o bajar el umbral de escalada a "10 o
+más" es una decisión suya, pendiente.
+
+### Verificación (local, sin desplegar)
+
+`scripts/test-silla-extra.js` (nuevo, 9 comprobaciones) más las 34 de las
+sesiones anteriores, las 43 en verde. Incluye una simulación completa del flujo
+de voz (`agente.ejecutar`) reproduciendo la llamada real: `check_availability`
+ahora sí avisa de la silla antes de prometerla, `create_reservation` la confirma
+y dejó la nota correcta en la base. Probado también que un grupo normal de 4
+sigue sin verse afectado, que una segunda reserva de 9 a la misma hora se
+rechaza (la mesa+silla ya está ocupada), y que 11 personas sigue escalando igual
+que siempre.
+
+
+---
+
 ## Sesión 2026-08-20 (tarde) · La agenda vertical, y la mesa que quedaba bloqueada
 
 **El fallo que reportó el restaurante**: si una mesa ya tenía una reserva, no se

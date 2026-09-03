@@ -84,8 +84,15 @@ async function checkAvailability(local, args) {
     time: args.time,
     party_size: g.personas,
     turno: apertura.turno,
+    // Si hace falta una silla extra se dice AQUÍ, en el mensaje que el agente
+    // lee tal cual. Antes esto no existía: el modelo llegó a inventarse que
+    // había mesa a una hora que nunca se comprobó, y el cliente se dio cuenta
+    // al fallar el guardado. Con la silla ya en el mensaje, lo que se promete
+    // por teléfono es lo mismo que se va a guardar.
     mensaje: mesa
-      ? `Sí, tenemos mesa el ${f.hablada} a las ${args.time} para ${g.personas} personas.`
+      ? mesa.sillasExtra
+        ? `Sí, tenemos sitio el ${f.hablada} a las ${args.time} para ${g.personas} personas, añadiendo una silla a la mesa. ¿Te parece bien?`
+        : `Sí, tenemos mesa el ${f.hablada} a las ${args.time} para ${g.personas} personas.`
       : `A esa hora lo tenemos completo. ¿Miro otro horario o el día siguiente?`,
   };
 }
@@ -139,10 +146,15 @@ async function createReservation(local, args, contexto) {
     created: true,
     ...r.reserva,
     table: r.mesa,
+    sillasExtra: r.sillasExtra || 0,
     fecha_hablada: f.hablada,
     mensaje:
       `Perfecto, reserva confirmada para el ${f.hablada} a las ${args.time}, ` +
-      `mesa para ${g.personas} personas a nombre de ${args.customer_name}. ` +
+      `mesa para ${g.personas} personas a nombre de ${args.customer_name}` +
+      // El personal ya lo ve en las notas de la reserva; esto es para que el
+      // cliente no se lleve una sorpresa al llegar y encontrar una silla
+      // añadida a la mesa que no esperaba.
+      (r.sillasExtra ? `, con una silla extra en la mesa. ` : `. `) +
       `Tu código es ${r.reserva.code}: apúntalo por si quieres cambiarla o anularla.`,
   };
 }

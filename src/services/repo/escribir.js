@@ -27,6 +27,14 @@ const T_HISTORIAL = "historial_reservas";
 // usaba el panel por defecto, así que no cambia el comportamiento de nadie.
 const DURACION_DEFECTO = 120;
 
+// Cuántas sillas se pueden añadir a una mesa cuando el grupo la desborda por
+// poco. Estipulado con el restaurante: un grupo que no cabe en ninguna mesa
+// individual, pero le sobra sitio para una silla más en la mesa más cercana,
+// se sienta ahí en vez de negarle la reserva o pasarlo directo a un humano.
+// Los grupos de más de 10 siguen escalando (GRUPO_GRANDE en agente.js); esto
+// solo tapa el hueco justo debajo de ese umbral.
+const SILLAS_EXTRA_MAX = 1;
+
 /**
  * Cuánto se supone que ocupa una mesa en este local.
  *
@@ -126,12 +134,29 @@ async function buscarMesaLibre(ctx, { fecha, hora, personas, duracion, excluirId
     tramos.filter((t) => seSolapan(ini, fin, t.ini, t.fin)).map((t) => t.mesaId)
   );
 
-  // La más pequeña que sirva: sentar a dos personas en la mesa de ocho deja el
-  // servicio sin sitio para un grupo grande que llame media hora más tarde.
-  return (
-    mesas.find((m) => m.capacidad >= personas && m.estado !== "Fuera de servicio" && !enUso.has(String(m.id))) ||
-    null
+  const disponibles = mesas.filter(
+    (m) => m.estado !== "Fuera de servicio" && !enUso.has(String(m.id))
   );
+
+  // La más pequeña que sirva sin ayuda: sentar a dos personas en la mesa de
+  // ocho deja el servicio sin sitio para un grupo grande que llame media hora
+  // más tarde.
+  const exacta = disponibles.find((m) => m.capacidad >= personas);
+  if (exacta) return exacta;
+
+  // Nadie llega justa: se prueba la mesa más cercana por debajo con sitio
+  // para "una silla más" (estipulado con el restaurante). Se ordena por
+  // capacidad descendente para que la más cercana al número exacto gane, no
+  // la primera que aparezca.
+  const conSilla = disponibles
+    .filter((m) => personas - m.capacidad > 0 && personas - m.capacidad <= SILLAS_EXTRA_MAX)
+    .sort((a, b) => b.capacidad - a.capacidad)[0];
+
+  if (conSilla) {
+    return { ...conSilla, sillasExtra: personas - conSilla.capacidad };
+  }
+
+  return null;
 }
 
 /**
@@ -246,6 +271,15 @@ async function crearReserva(ctx, datos) {
   const codigoFinal = codigo || generarCodigo();
   const extraidos = allergens.extraer(notas);
 
+  // La silla extra es una nota física para cocina/sala, no un dato que la
+  // reserva necesite consultar luego: se deja escrita en las notas de la
+  // reserva, que es lo primero que se lee al montar la mesa.
+  const notasFinal = mesa && mesa.sillasExtra
+    ? [notas, `(Mesa ${mesa.nombre}: añadir ${mesa.sillasExtra} silla${mesa.sillasExtra > 1 ? "s" : ""} extra para el grupo de ${personas})`]
+        .filter(Boolean)
+        .join(" ")
+    : notas;
+
   const fila = await db.crear(ctx, T_RESERVAS, {
     id_reserva: codigoFinal,
     fecha,
@@ -254,7 +288,7 @@ async function crearReserva(ctx, datos) {
     personas,
     nombre,
     telefono,
-    notas,
+    notas: notasFinal,
     status: "confirmed",
     canal,
     origen: canal,
@@ -282,6 +316,7 @@ async function crearReserva(ctx, datos) {
     reserva: lectura._formas.aReserva(fila),
     mesa: mesa ? mesa.nombre : null,
     sinMesa: !mesa,
+    sillasExtra: (mesa && mesa.sillasExtra) || 0,
   };
 }
 
