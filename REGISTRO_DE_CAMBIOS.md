@@ -11,6 +11,93 @@ valor del registro está en poder mirar atrás y entender por qué algo es como 
 
 ---
 
+## Sesión 2026-09-03 (continuación) · Unir mesas
+
+El restaurante probó anoche crear 2 reservas ficticias para un grupo de 9,
+esperando que el sistema uniera dos mesas, y no ocurrió nada especial. Se
+investigó qué pasó de verdad: **ninguna de las dos reservas era de 9
+personas** (una de 4, otra de 8) — no era el caso de la silla extra fallando,
+era que elegir una mesa a mano desde el panel se saltaba TODA la validación de
+capacidad, silenciosamente. Se reprodujo en producción: 9 personas en Mesa 6
+(8 plazas) elegida a mano se guardaba tal cual, sin aviso, sin nota, sin
+rechazo. Ese era el fallo real.
+
+Se pidió entonces la función de unir mesas: cuando el grupo no cabe ni con la
+silla extra, un desplegable para elegir con qué otra mesa se fusiona.
+
+### La columna nueva
+
+`reservas.mesa_id_secundaria` (bigint, nullable). `NULL` = reserva normal.
+
+### El motor (`escribir.js`)
+
+`tramosOcupados()` ahora emite un tramo por CADA mesa que ocupa una reserva —
+antes solo miraba `mesa_id`, así que la mesa secundaria de una fusión se veía
+libre para cualquiera que la consultase por su lado.
+
+`crearReserva()` y `modificarReserva()`, con mesa señalada a mano:
+- si viene `mesaIdSecundaria`: comprueba que las DOS estén libres, y si alguna
+  no lo está dice cuál (`mesa_secundaria_ocupada`)
+- si NO viene: aplica el mismo margen de "una silla más" que ya usaba el
+  reparto automático — y si el hueco es mayor, **rechaza** con
+  `capacidad_insuficiente` en vez de guardarlo en silencio. Esto es lo que
+  cierra el fallo reportado.
+
+La voz nunca puede fusionar (no hay forma de "elegir de un desplegable" por
+teléfono): `modificarReserva` solo activa esta lógica en el camino de mesa
+señalada a mano, que Marta nunca usa — sigue escalando grupos de 10+ a un
+humano exactamente igual que antes.
+
+### El panel (`ReservationModal.tsx`)
+
+Al superar la capacidad de la mesa aparece un desplegable con las demás mesas
+de la planta, filtradas a las libres a esa hora y fecha (mismo criterio de
+solape que el servidor), cada una con su capacidad conjunta. Elegir una
+actualiza al momento la insignia de la cabecera ("Mesa 6 + Mesa 4") y el
+aviso. Sin elegir ninguna, con hueco de 1 persona se avisa que se añadirá una
+silla; con más, se avisa que no se podrá guardar sin fusionar.
+
+**Un fallo propio, encontrado probando y corregido antes de terminar**: abrir
+una reserva fusionada haciendo clic en su mesa SECUNDARIA (en vez de la
+principal) mostraba "Mesa 4 + Mesa 4" en vez de "Mesa 6 + Mesa 4" — y guardar
+desde ahí habría reasignado la mesa principal a la secundaria, robándole la
+mesa a la reserva sin que nadie lo pidiera. La causa: el componente confundía
+"la mesa que se pulsó para abrir el modal" con "la mesa principal de verdad".
+Se introdujo `mesaPrincipal`, derivada de la reserva real y no del clic, y se
+usa en capacidad, desplegable y guardado.
+
+Otros lugares que antes solo miraban `r.tableId === X` (el plano, la agenda
+del día, `pasesDeMesa` en `turnos.ts`) se actualizaron con un `ocupaMesa()`
+compartido para que la mesa fusionada también se vea reservada.
+
+### Verificación (local, sin desplegar)
+
+`scripts/test-fusion-mesas.js` (nuevo, 14 comprobaciones): el bug original
+reproducido y confirmado corregido, el caso de unir dos mesas de principio a
+fin, la mesa secundaria quedando ocupada para terceros, rechazo si la
+secundaria elegida ya está cogida, PATCH añadiendo y quitando una fusión, y
+que un grupo de 9 con silla extra sigue exactamente igual que antes. Más las
+44 comprobaciones de las cuatro suites anteriores, todas en verde.
+
+En el navegador: el desplegable aparece con las mesas libres y su capacidad
+conjunta, la insignia y el aviso se actualizan en vivo, se guarda con las dos
+mesas correctas en la base, el plano marca AMBAS mesas como reservadas, la
+Agenda del Día dice "Mesa 6 + Mesa 4", clicar la mesa secundaria abre la misma
+reserva con la mesa principal correcta (tras el arreglo), y el servidor
+rechaza con mensaje claro si se intenta guardar sin fusionar cuando no cabe.
+
+**Detalle preexistente encontrado, sin tocar**: el modal cierra siempre tras
+pulsar guardar, incluso si el servidor rechaza la reserva — el error solo se
+ve en el aviso emergente, con el formulario ya cerrado. No es nuevo de esta
+sesión (afecta a cualquier rechazo, no solo a capacidad); se deja anotado, no
+se corrige sin que se pida.
+
+**Sin desplegar todavía.** No se tocaron las 2 reservas ficticias del
+restaurante ("Victor", "Ocupado") que quedaban de las pruebas de anoche.
+
+
+---
+
 ## Sesión 2026-09-03 · Modo claro
 
 Se pidió un modo claro además del oscuro actual, en tonos hueso cálido — nunca

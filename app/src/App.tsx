@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Table, Reservation, NotificationLog, TableStatus, Decoration } from './types';
-import { VistaTurno, ETIQUETA_TURNO, esDelTurno, estaViva, turnoActual } from './turnos';
+import { VistaTurno, ETIQUETA_TURNO, esDelTurno, estaViva, turnoActual, ocupaMesa } from './turnos';
 import { INITIAL_DECORATIONS } from './data';
 import * as api from './api';
 import { Customer, Dish, Session } from './api';
@@ -355,7 +355,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void; theme: 'dark' | 
       const updated = prevTables.map(t => {
         // Find if this table has an active reservation for the selected date
         const activeRes = reservations.find(
-          r => r.tableId === t.id && r.date === selectedDate && r.status !== 'completed' && r.status !== 'cancelled'
+          r => ocupaMesa(r, t.id) && r.date === selectedDate && r.status !== 'completed' && r.status !== 'cancelled'
         );
 
         let targetStatus: TableStatus = 'free';
@@ -528,8 +528,13 @@ const Panel: React.FC<{ session: Session; onLogout: () => void; theme: 'dark' | 
     }
     setTables(prev => prev.filter(t => t.id !== tableId));
     // Also clear table assignment of active reservations on this table
+    // (either the main table, or the fused secondary one)
     setReservations(prev =>
-      prev.map(r => r.tableId === tableId ? { ...r, tableId: '' } : r)
+      prev.map(r => {
+        if (r.tableId === tableId) return { ...r, tableId: '' };
+        if (r.secondaryTableId === tableId) return { ...r, secondaryTableId: undefined };
+        return r;
+      })
     );
     addNotificationLog(
       "Plano Actualizado",
@@ -804,7 +809,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void; theme: 'dark' | 
   const getActiveReservationForSelectedTable = (): Reservation | null => {
     if (!selectedTableId) return null;
     const active = reservations.find(
-      r => r.tableId === selectedTableId && r.date === selectedDate && r.status !== 'completed' && r.status !== 'cancelled'
+      r => ocupaMesa(r, selectedTableId) && r.date === selectedDate && r.status !== 'completed' && r.status !== 'cancelled'
     );
     return active || null;
   };
@@ -837,7 +842,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void; theme: 'dark' | 
   const estadoMesaEnFecha = (t: Table): TableStatus => {
     if (t.status === 'out_of_service') return 'out_of_service';
     const conReserva = reservasDelTurno.some(
-      r => r.tableId === t.id && r.date === selectedDate && estaViva(r)
+      r => ocupaMesa(r, t.id) && r.date === selectedDate && estaViva(r)
     );
     if (conReserva) return 'reserved';
     return selectedDate === hoyISO ? t.status : 'free';
@@ -1580,6 +1585,7 @@ const Panel: React.FC<{ session: Session; onLogout: () => void; theme: 'dark' | 
         table={tables.find(t => t.id === selectedTableId) || null}
         activeReservation={editingReservation ?? getActiveReservationForSelectedTable()}
         reservations={reservations}
+        tables={mesasDeLaPlanta}
         turnos={turnos}
         defaultSeatedDuration={defaultSeatedDuration}
         fechaPorDefecto={selectedDate}

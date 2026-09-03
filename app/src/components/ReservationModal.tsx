@@ -2,10 +2,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Table, Reservation } from '../types';
 import type { Turno } from '../api';
 import { ALLERGIES_OPTIONS, AUTO_CONFIRM_TEMPLATES } from '../data';
-import { X, Calendar, Clock, User, Phone, Users, FileText, Check, AlertTriangle, MessageSquare, Send, BellRing, Sparkles } from 'lucide-react';
+import { X, Calendar, Clock, User, Phone, Users, FileText, Check, AlertTriangle, MessageSquare, Send, BellRing, Sparkles, Link2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TimelineMesa } from './TimelineMesa';
-import { estaViva } from '../turnos';
+import { estaViva, ocupaMesa, minutosDe } from '../turnos';
 
 interface ReservationModalProps {
   isOpen: boolean;
@@ -14,6 +14,8 @@ interface ReservationModalProps {
   activeReservation: Reservation | null;
   /** Todas las reservas cargadas: el calendario filtra las de esta mesa y día. */
   reservations: Reservation[];
+  /** Mesas de la planta actual: de aquí sale la lista para fusionar. */
+  tables: Table[];
   /** Franjas de servicio del local, para saber qué horas se pueden pintar. */
   turnos: Turno[];
   defaultSeatedDuration: number;
@@ -31,6 +33,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
   table,
   activeReservation,
   reservations,
+  tables,
   turnos,
   defaultSeatedDuration,
   fechaPorDefecto,
@@ -44,6 +47,9 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
   const [date, setDate] = useState<string>('');
   const [time, setTime] = useState<string>('');
   const [pax, setPax] = useState<number>(2);
+  // Segunda mesa fusionada, para grupos que no caben en la principal ni con
+  // una silla de más. '' = sin fusionar, que es el caso normal.
+  const [secondaryTableId, setSecondaryTableId] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [allergies, setAllergies] = useState<string[]>([]);
   const [autoConfirmMessage, setAutoConfirmMessage] = useState<boolean>(true);
@@ -83,6 +89,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
         setDate(reservaActiva.date);
         setTime(reservaActiva.time);
         setPax(reservaActiva.pax);
+        setSecondaryTableId(reservaActiva.secondaryTableId || '');
         setNotes(reservaActiva.notes);
         setAllergies(reservaActiva.allergies);
         setAutoConfirmMessage(reservaActiva.autoConfirmMessage);
@@ -96,6 +103,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
         setDate(fechaPorDefecto || new Date().toISOString().split('T')[0]);
         setTime('20:30'); // Default dinner peak
         setPax(table ? table.seats : 4);
+        setSecondaryTableId('');
         setNotes('');
         setAllergies([]);
         setAutoConfirmMessage(true);
@@ -107,15 +115,56 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
   }, [isOpen, reservaActiva, table, defaultSeatedDuration, fechaPorDefecto]);
 
   /**
+   * La mesa principal DE VERDAD. `table` es solo la que se pulsó para abrir
+   * el modal — si se pulsó la mesa secundaria de una reserva fusionada,
+   * `table` apunta a ELLA, no a la principal real. Todo lo que decide
+   * capacidad, candidatas de fusión o qué se guarda usa esta, nunca `table`
+   * directamente, o editar una reserva fusionada desde su mesa secundaria
+   * le robaría la mesa principal a la reserva sin que nadie lo pidiera.
+   */
+  const mesaPrincipal = reservaActiva
+    ? tables.find((t) => t.id === reservaActiva.tableId) || table
+    : table;
+
+  /**
    * Lo que ya ocupa esta mesa ese día. Depende de `date` a propósito: si se
    * cambia el día en el formulario, el calendario tiene que repintarse con las
    * reservas del día nuevo, no seguir enseñando las del anterior.
    */
   const reservasDeEstaMesa = useMemo(() => {
-    const mesaId = table?.id ?? reservaActiva?.tableId ?? '';
+    const mesaId = mesaPrincipal?.id ?? reservaActiva?.tableId ?? '';
     if (!mesaId) return [];
-    return reservations.filter((r) => r.tableId === mesaId && r.date === date && estaViva(r));
-  }, [reservations, table?.id, reservaActiva?.tableId, date]);
+    // ocupaMesa cuenta también las reservas que fusionaron ESTA mesa como
+    // secundaria: si no, abrir la mesa fusionada la vería libre.
+    return reservations.filter((r) => ocupaMesa(r, mesaId) && r.date === date && estaViva(r));
+  }, [reservations, mesaPrincipal?.id, reservaActiva?.tableId, date]);
+
+  /**
+   * Otras mesas de la planta libres a esta hora, candidatas a fusionarse con
+   * la principal. Mismo criterio de solape que usa el servidor (fin
+   * excluido), para que lo que se ofrece aquí sea lo mismo que se va a
+   * aceptar al guardar.
+   */
+  const mesasLibresParaFusion = useMemo(() => {
+    const principal = mesaPrincipal;
+    if (!principal) return [];
+    const ini = minutosDe(time);
+    const fin = ini + customDurationMinutes;
+    return tables
+      .filter((t) => t.id !== principal.id)
+      .filter((t) => {
+        const ocupada = reservations.some((r) => {
+          if (r.id === reservaActiva?.id) return false;
+          if (!estaViva(r) || r.date !== date || !ocupaMesa(r, t.id)) return false;
+          const rIni = minutosDe(r.time);
+          const rFin = rIni + (r.customDurationMinutes || defaultSeatedDuration);
+          return ini < rFin && rIni < fin;
+        });
+        return !ocupada;
+      });
+  }, [mesaPrincipal, tables, reservations, date, time, customDurationMinutes, reservaActiva?.id, defaultSeatedDuration]);
+
+  const mesaFusion = tables.find((t) => t.id === secondaryTableId) || null;
 
   // Sin mesa solo tiene sentido si estamos editando una reserva existente
   // (p. ej. una reserva del calendario cuya mesa fue eliminada del plano).
@@ -162,7 +211,8 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
       date,
       time,
       pax,
-      tableId: table ? table.id : (reservaActiva?.tableId ?? ''),
+      tableId: mesaPrincipal ? mesaPrincipal.id : (reservaActiva?.tableId ?? ''),
+      secondaryTableId,
       status: reservaActiva ? reservaActiva.status : 'confirmed',
       notes: notes.trim(),
       allergies,
@@ -209,7 +259,8 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
             <div className="p-4 bg-brand-surface-low border-b border-brand-outline flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono px-2 py-0.5 bg-brand-primary/10 border border-brand-primary/30 text-brand-primary rounded font-bold">
-                  {table ? table.name : 'Sin mesa asignada'}
+                  {mesaPrincipal ? mesaPrincipal.name : 'Sin mesa asignada'}
+                  {mesaFusion && ` + ${mesaFusion.name}`}
                 </span>
                 <h3 className="font-sans font-bold text-sm text-brand-text">
                   {reservaActiva ? 'Gestionar Reserva' : 'Nueva Reserva de Mesa'}
@@ -249,12 +300,43 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
                 </div>
               )}
 
-              {/* Warnings if pax exceeds table capacity */}
-              {table && pax > table.seats && (
-                <div className="flex items-start gap-2 bg-brand-tertiary/10 border border-brand-tertiary/30 p-2.5 rounded-lg text-xs text-brand-tertiary">
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold">Capacidad excedida:</span> Esta mesa tiene un límite aconsejado de {table.seats} asientos. El comensal solicita {pax} personas. Asegúrate de añadir sillas adicionales.
+              {/* La mesa no llega: silla extra si falta poco, o fusionar con otra.
+                  Usa mesaPrincipal, no `table`: si se abrió esta reserva desde
+                  su mesa secundaria, `table` sería esa secundaria, no la
+                  principal real, y la capacidad se compararía contra la mesa
+                  equivocada. */}
+              {mesaPrincipal && (pax > mesaPrincipal.seats || mesaFusion) && (
+                <div className="space-y-2">
+                  {pax > mesaPrincipal.seats && (
+                    <div className="flex items-start gap-2 bg-brand-tertiary/10 border border-brand-tertiary/30 p-2.5 rounded-lg text-xs text-brand-tertiary">
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold">Capacidad excedida:</span> {mesaPrincipal.name} tiene {mesaPrincipal.seats} asientos y el grupo es de {pax}.{' '}
+                        {mesaFusion
+                          ? `Fusionada con ${mesaFusion.name} (${mesaPrincipal.seats + mesaFusion.seats} plazas en conjunto).`
+                          : pax - mesaPrincipal.seats <= 1
+                            ? 'Se añadirá una silla extra al guardar.'
+                            : 'Elige una mesa para fusionar — sin ella, esta reserva no se podrá guardar.'}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <Link2 className="w-4 h-4 text-brand-muted shrink-0" />
+                    <select
+                      value={secondaryTableId}
+                      onChange={(e) => setSecondaryTableId(e.target.value)}
+                      className="flex-1 bg-brand-surface-low border border-brand-outline rounded-lg px-2.5 py-2 text-xs text-brand-text font-sans focus:outline-none focus:border-brand-primary cursor-pointer"
+                    >
+                      <option value="">
+                        {pax > mesaPrincipal.seats && pax - mesaPrincipal.seats <= 1 ? 'Sin fusionar (una silla extra)' : 'Sin fusionar'}
+                      </option>
+                      {mesasLibresParaFusion.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          Fusionar con {t.name} ({t.seats} plazas · {mesaPrincipal.seats + t.seats} en conjunto)
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               )}
@@ -534,6 +616,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
                         time: time || now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false }),
                         pax,
                         tableId: table.id,
+                        secondaryTableId,
                         status: 'seated',
                         seatedAt: now.toISOString(),
                         notes: notes.trim() || 'Ocupación directa',

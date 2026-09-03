@@ -105,6 +105,7 @@ export const AgendaDelDia: React.FC<AgendaDelDiaProps> = ({
                   <p className="text-[10px] font-mono text-brand-muted flex items-center gap-1 mt-0.5">
                     <Armchair className="w-3 h-3 shrink-0" />
                     {nombreMesa(r.tableId)}
+                    {r.secondaryTableId && ` + ${nombreMesa(r.secondaryTableId)}`}
                   </p>
                 </div>
 

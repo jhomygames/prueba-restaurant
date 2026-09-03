@@ -46,6 +46,16 @@ export function estaViva(r: Reservation): boolean {
 }
 
 /**
+ * ¿Esta reserva ocupa esa mesa? Cuenta tanto la mesa principal como la
+ * fusionada: un grupo grande que se sienta a caballo entre la Mesa 6 y la
+ * Mesa 2 tiene que aparecer al mirar CUALQUIERA de las dos, o la fusionada
+ * se vería libre para cualquiera que la consultase por su lado.
+ */
+export function ocupaMesa(r: Reservation, mesaId: string): boolean {
+  return r.tableId === mesaId || r.secondaryTableId === mesaId;
+}
+
+/**
  * Reservas vivas de una mesa en un día y turno, en orden de hora.
  *
  * Es la lista de pases: cada una es un grupo distinto que se sienta en esa
@@ -58,7 +68,7 @@ export function pasesDeMesa(
   vista: VistaTurno
 ): Reservation[] {
   return reservas
-    .filter((r) => r.tableId === mesaId && r.date === fecha && estaViva(r) && esDelTurno(r, vista))
+    .filter((r) => ocupaMesa(r, mesaId) && r.date === fecha && estaViva(r) && esDelTurno(r, vista))
     .sort((a, b) => minutosDe(a.time) - minutosDe(b.time));
 }
 

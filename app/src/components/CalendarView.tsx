@@ -184,7 +184,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         ) : (
           filteredReservations.map((res) => {
             const hasAllergies = res.allergies && res.allergies.length > 0;
-            const tableName = getTableName(res.tableId);
+            const tableName = res.secondaryTableId
+              ? `${getTableName(res.tableId)} + ${getTableName(res.secondaryTableId)}`
+              : getTableName(res.tableId);
 
             return (
               <div

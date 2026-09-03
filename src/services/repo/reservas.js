@@ -49,6 +49,9 @@ function aReserva(fila) {
     notes: fila.notas || "",
     status: estado,
     table_id: fila.mesa_id ? String(fila.mesa_id) : null,
+    // Segunda mesa cuando la reserva es de un grupo fusionado. `null` = una
+    // sola mesa, el caso normal.
+    secondary_table_id: fila.mesa_id_secundaria ? String(fila.mesa_id_secundaria) : null,
     reminded_24h: fila.recordatorio_24h === true,
     reminded_1h: fila.recordatorio_1h === true,
     review_requested: fila.resena_pedida === true,

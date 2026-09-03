@@ -98,19 +98,21 @@ function ocupaMesa(fila) {
  */
 async function tramosOcupados(ctx, { fecha, duracionDefecto, excluirId = null }) {
   const filas = await db.listar(ctx, T_RESERVAS, { filtros: { fecha } });
-  return filas
+  const vivas = filas
     .filter(ocupaMesa)
-    .filter((r) => r.mesa_id != null)
-    .filter((r) => String(r.id) !== String(excluirId))
-    .map((r) => {
-      const ini = aMinutos(r.hora);
-      return {
-        mesaId: String(r.mesa_id),
-        nombre: r.nombre || "",
-        ini,
-        fin: ini + (Number(r.duracion_min) || duracionDefecto),
-      };
-    });
+    .filter((r) => String(r.id) !== String(excluirId));
+
+  // Una reserva fusionada ocupa DOS mesas a la vez: se emite un tramo por
+  // cada una, o la segunda mesa se vería libre para cualquiera que mirase
+  // solo por su lado y se solaparía dos reservas encima de ella.
+  const tramos = [];
+  for (const r of vivas) {
+    const ini = aMinutos(r.hora);
+    const fin = ini + (Number(r.duracion_min) || duracionDefecto);
+    if (r.mesa_id != null) tramos.push({ mesaId: String(r.mesa_id), nombre: r.nombre || "", ini, fin });
+    if (r.mesa_id_secundaria != null) tramos.push({ mesaId: String(r.mesa_id_secundaria), nombre: r.nombre || "", ini, fin });
+  }
+  return tramos;
 }
 
 /**
@@ -230,6 +232,10 @@ async function crearReserva(ctx, datos) {
     // Mesa señalada a dedo desde el panel. Sin ella se busca la primera libre,
     // que es lo que necesitan la voz y WhatsApp.
     mesaId = null,
+    // Segunda mesa fusionada, para grupos que no caben en una sola ni con la
+    // silla extra. Solo tiene sentido junto a `mesaId`: es una elección visual
+    // del panel (un desplegable), no algo que la voz o WhatsApp puedan pedir.
+    mesaIdSecundaria = null,
     // Duración propia de esta reserva. `null` = hereda la del local, y sigue
     // heredándola si el local la cambia mañana.
     duracionMin = null,
@@ -257,6 +263,9 @@ async function crearReserva(ctx, datos) {
 
   // 3. Mesa. Si viene señalada, se comprueba ESA; si no, se busca cualquiera.
   let mesa = null;
+  let mesaSecundaria = null;
+  let sillasExtra = 0;
+
   if (mesaId) {
     const { libre, choca } = await mesaLibre(ctx, { fecha, hora, duracion: duracionMin, mesaId });
     if (!libre) return { creada: false, motivo: "mesa_ocupada", choca };
@@ -264,24 +273,48 @@ async function crearReserva(ctx, datos) {
     // Una mesa de otro restaurante no existe para este: no se cae al reparto
     // automático, porque eso guardaría la reserva en un sitio que nadie pidió.
     if (!mesa) return { creada: false, motivo: "mesa_no_encontrada" };
+
+    if (mesaIdSecundaria && String(mesaIdSecundaria) !== String(mesaId)) {
+      const seg = await mesaLibre(ctx, { fecha, hora, duracion: duracionMin, mesaId: mesaIdSecundaria });
+      if (!seg.libre) return { creada: false, motivo: "mesa_secundaria_ocupada", choca: seg.choca };
+      mesaSecundaria = await db.obtener(ctx, T_MESAS, mesaIdSecundaria);
+      if (!mesaSecundaria) return { creada: false, motivo: "mesa_secundaria_no_encontrada" };
+    } else if (personas > mesa.capacidad) {
+      // Sin segunda mesa: el mismo margen de "una silla más" que ya usa el
+      // reparto automático. Antes esto NO se comprobaba aquí — una mesa
+      // elegida a mano aceptaba cualquier número de personas sin decir nada,
+      // que es justo el fallo que reportó el restaurante.
+      const hueco = personas - mesa.capacidad;
+      if (hueco > SILLAS_EXTRA_MAX) {
+        return {
+          creada: false,
+          motivo: "capacidad_insuficiente",
+          capacidad: mesa.capacidad,
+          mesa: mesa.nombre,
+        };
+      }
+      sillasExtra = hueco;
+    }
   } else {
     mesa = await buscarMesaLibre(ctx, { fecha, hora, personas, duracion: duracionMin });
     if (!mesa && !externalId) {
       return { creada: false, motivo: "sin_mesa" };
     }
+    sillasExtra = (mesa && mesa.sillasExtra) || 0;
   }
 
   const codigoFinal = codigo || generarCodigo();
   const extraidos = allergens.extraer(notas);
 
-  // La silla extra es una nota física para cocina/sala, no un dato que la
-  // reserva necesite consultar luego: se deja escrita en las notas de la
-  // reserva, que es lo primero que se lee al montar la mesa.
-  const notasFinal = mesa && mesa.sillasExtra
-    ? [notas, `(Mesa ${mesa.nombre}: añadir ${mesa.sillasExtra} silla${mesa.sillasExtra > 1 ? "s" : ""} extra para el grupo de ${personas})`]
-        .filter(Boolean)
-        .join(" ")
-    : notas;
+  // La silla extra y la fusión son notas físicas para cocina/sala, no datos
+  // que la reserva necesite consultar luego: se dejan escritas en las notas,
+  // que es lo primero que se lee al montar la mesa.
+  const notaFisica = mesaSecundaria
+    ? `(Mesa ${mesa.nombre} fusionada con ${mesaSecundaria.nombre} para el grupo de ${personas})`
+    : sillasExtra
+      ? `(Mesa ${mesa.nombre}: añadir ${sillasExtra} silla${sillasExtra > 1 ? "s" : ""} extra para el grupo de ${personas})`
+      : "";
+  const notasFinal = [notas, notaFisica].filter(Boolean).join(" ");
 
   const fila = await db.crear(ctx, T_RESERVAS, {
     id_reserva: codigoFinal,
@@ -300,6 +333,7 @@ async function crearReserva(ctx, datos) {
     // Sin mesa NO se rechaza cuando viene de fuera: la plataforma ya se la
     // vendió al cliente, y dejarla sin asignar es mejor que perderla.
     mesa_id: mesa ? mesa.id : null,
+    mesa_id_secundaria: mesaSecundaria ? mesaSecundaria.id : null,
     alergias: extraidos.alergenos,
     external_id: externalId,
   });
@@ -318,13 +352,16 @@ async function crearReserva(ctx, datos) {
     creada: true,
     reserva: lectura._formas.aReserva(fila),
     mesa: mesa ? mesa.nombre : null,
+    mesaSecundaria: mesaSecundaria ? mesaSecundaria.nombre : null,
     sinMesa: !mesa,
-    sillasExtra: (mesa && mesa.sillasExtra) || 0,
+    sillasExtra,
   };
 }
 
-/** Cambia fecha, hora o personas. La reserva solo se toca si hay dónde ponerla. */
-async function modificarReserva(ctx, { codigo, nuevaFecha, nuevaHora, nuevasPersonas, nuevaMesaId, nuevaDuracion, canal = "panel" }) {
+/** Cambia fecha, hora, personas o mesas. La reserva solo se toca si hay dónde ponerla. */
+async function modificarReserva(ctx, {
+  codigo, nuevaFecha, nuevaHora, nuevasPersonas, nuevaMesaId, nuevaMesaIdSecundaria, nuevaDuracion, canal = "panel",
+}) {
   const actual = await lectura.reservaPorCodigo(ctx, codigo);
   if (!actual) return { modificada: false, motivo: "no_encontrada" };
 
@@ -335,7 +372,7 @@ async function modificarReserva(ctx, { codigo, nuevaFecha, nuevaHora, nuevasPers
 
   if (
     fecha === actual.date && hora === actual.time && personas === actual.party_size &&
-    !nuevaMesaId && !nuevaDuracion
+    !nuevaMesaId && !nuevaDuracion && nuevaMesaIdSecundaria === undefined
   ) {
     return { modificada: false, motivo: "sin_cambios", reserva: actual };
   }
@@ -346,6 +383,15 @@ async function modificarReserva(ctx, { codigo, nuevaFecha, nuevaHora, nuevasPers
   }
 
   let mesa = null;
+  let mesaSecundaria = null;
+  let sillasExtra = 0;
+
+  // Igual que en crearReserva: con mesa señalada se comprueba ESA (y su
+  // posible fusión); sin ella se busca la mejor libre. Se conserva el
+  // criterio de siempre: la voz nunca manda `nuevaMesaId` (no puede elegir
+  // mesa), así que un cambio de hora por teléfono sigue re-buscando la mejor
+  // mesa disponible en vez de aferrarse a la actual. La fusión es exclusiva
+  // del panel, donde SÍ se puede señalar una mesa.
   if (nuevaMesaId) {
     const { libre, choca } = await mesaLibre(ctx, {
       fecha, hora, duracion, mesaId: nuevaMesaId, excluirId: actual.id,
@@ -353,6 +399,24 @@ async function modificarReserva(ctx, { codigo, nuevaFecha, nuevaHora, nuevasPers
     if (!libre) return { modificada: false, motivo: "mesa_ocupada", choca, reserva: actual };
     mesa = await db.obtener(ctx, T_MESAS, nuevaMesaId);
     if (!mesa) return { modificada: false, motivo: "mesa_no_encontrada", reserva: actual };
+
+    // undefined = no se tocó este campo, se conserva la fusión que ya tuviera;
+    // null explícito = quitarla. Por eso no se usa `|| null` a secas.
+    const mesaIdSecundariaPedida =
+      nuevaMesaIdSecundaria !== undefined ? nuevaMesaIdSecundaria : actual.secondary_table_id || null;
+
+    if (mesaIdSecundariaPedida && String(mesaIdSecundariaPedida) !== String(nuevaMesaId)) {
+      const seg = await mesaLibre(ctx, { fecha, hora, duracion, mesaId: mesaIdSecundariaPedida, excluirId: actual.id });
+      if (!seg.libre) return { modificada: false, motivo: "mesa_secundaria_ocupada", choca: seg.choca, reserva: actual };
+      mesaSecundaria = await db.obtener(ctx, T_MESAS, mesaIdSecundariaPedida);
+      if (!mesaSecundaria) return { modificada: false, motivo: "mesa_secundaria_no_encontrada", reserva: actual };
+    } else if (personas > mesa.capacidad) {
+      const hueco = personas - mesa.capacidad;
+      if (hueco > SILLAS_EXTRA_MAX) {
+        return { modificada: false, motivo: "capacidad_insuficiente", capacidad: mesa.capacidad, mesa: mesa.nombre, reserva: actual };
+      }
+      sillasExtra = hueco;
+    }
   } else {
     mesa = await buscarMesaLibre(ctx, { fecha, hora, personas, duracion, excluirId: actual.id });
     if (!mesa) {
@@ -360,12 +424,14 @@ async function modificarReserva(ctx, { codigo, nuevaFecha, nuevaHora, nuevasPers
       // reserva a que la pierda por un cambio que no se pudo hacer.
       return { modificada: false, motivo: "sin_mesa", reserva: actual };
     }
+    sillasExtra = mesa.sillasExtra || 0;
   }
 
   const fila = await db.actualizar(ctx, T_RESERVAS, actual.id, {
     fecha, hora, personas,
     turno: apertura.turno || actual.shift,
     mesa_id: mesa.id,
+    mesa_id_secundaria: mesaSecundaria ? mesaSecundaria.id : null,
     // Solo si se pidió cambiarla: si no, se deja como estaba (incluido el `null`
     // que significa "la que diga el local").
     ...(nuevaDuracion ? { duracion_min: nuevaDuracion } : {}),
@@ -377,7 +443,14 @@ async function modificarReserva(ctx, { codigo, nuevaFecha, nuevaHora, nuevasPers
     despues: { fecha, hora, personas },
   });
 
-  return { modificada: true, antes: actual, reserva: lectura._formas.aReserva(fila), mesa: mesa.nombre };
+  return {
+    modificada: true,
+    antes: actual,
+    reserva: lectura._formas.aReserva(fila),
+    mesa: mesa.nombre,
+    mesaSecundaria: mesaSecundaria ? mesaSecundaria.nombre : null,
+    sillasExtra,
+  };
 }
 
 async function cancelarReserva(ctx, { codigo, canal = "panel" }) {

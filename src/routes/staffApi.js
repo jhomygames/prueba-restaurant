@@ -115,6 +115,9 @@ function aReserva(f) {
     time: hora,
     pax: f.personas || 0,
     tableId: f.mesa_id ? String(f.mesa_id) : "",
+    // Segunda mesa cuando el grupo no cabía en una y se fusionó con otra.
+    // Vacío = reserva normal, de una sola mesa.
+    secondaryTableId: f.mesa_id_secundaria ? String(f.mesa_id_secundaria) : "",
     status: RES_ESTADOS.includes(f.status) ? f.status : "confirmed",
     notes: f.notas || "",
     allergies: f.alergias || [],
@@ -344,6 +347,9 @@ router.post("/api/reservations", manejar(async (req, res) => {
     // backend repartía por su cuenta: se abría el modal desde la Mesa 3 y la
     // reserva podía acabar en la 1.
     mesaId: b.tableId || null,
+    // Segunda mesa, si el grupo se fusiona con otra porque no cabe en una
+    // sola. Solo tiene efecto si también viene `tableId`.
+    mesaIdSecundaria: b.secondaryTableId || null,
     duracionMin: b.customDurationMinutes || null,
   });
 
@@ -357,6 +363,11 @@ router.post("/api/reservations", manejar(async (req, res) => {
         ? `Esa mesa ya la tiene ${r.choca} en ese horario.`
         : "Esa mesa ya está ocupada en ese horario.",
       mesa_no_encontrada: "Esa mesa ya no existe en el plano.",
+      mesa_secundaria_ocupada: r.choca
+        ? `La mesa con la que quieres fusionar ya la tiene ${r.choca} en ese horario.`
+        : "La mesa con la que quieres fusionar ya está ocupada en ese horario.",
+      mesa_secundaria_no_encontrada: "La mesa con la que quieres fusionar ya no existe en el plano.",
+      capacidad_insuficiente: `La mesa ${r.mesa || ""} tiene ${r.capacidad ?? "?"} plazas y no llega para ${b.pax} personas. Fusiónala con otra mesa o elige una más grande.`,
       duplicada: "Ese cliente ya tiene una reserva ese mismo turno.",
       datos_incompletos: "Faltan datos para crear la reserva.",
     };
@@ -372,9 +383,10 @@ router.post("/api/reservations", manejar(async (req, res) => {
 
 /**
  * Campos cuyo cambio puede dejar la reserva en un sitio imposible: fuera de
- * horario o encima de otra. Solo si se toca alguno hay que revalidar.
+ * horario, encima de otra, o sin capacidad. Solo si se toca alguno hay que
+ * revalidar.
  */
-const CAMPOS_DE_SITIO = ["date", "time", "pax", "tableId", "customDurationMinutes"];
+const CAMPOS_DE_SITIO = ["date", "time", "pax", "tableId", "secondaryTableId", "customDurationMinutes"];
 
 router.patch("/api/reservations/:id", manejar(async (req, res) => {
   const b = req.body || {};
@@ -393,6 +405,8 @@ router.patch("/api/reservations/:id", manejar(async (req, res) => {
     const fecha = b.date !== undefined ? b.date : actual.fecha;
     const hora = b.time !== undefined ? b.time : String(actual.hora || "").slice(0, 5);
     const mesaId = b.tableId !== undefined ? b.tableId : actual.mesa_id;
+    const mesaIdSecundaria = b.secondaryTableId !== undefined ? (b.secondaryTableId || null) : actual.mesa_id_secundaria;
+    const pax = b.pax !== undefined ? b.pax : actual.personas;
     const duracion =
       b.customDurationMinutes !== undefined ? b.customDurationMinutes : actual.duracion_min;
 
@@ -414,6 +428,36 @@ router.patch("/api/reservations/:id", manejar(async (req, res) => {
             ? `Esa mesa ya la tiene ${choca} en ese horario.`
             : "Esa mesa ya está ocupada en ese horario.",
         });
+      }
+
+      if (mesaIdSecundaria && String(mesaIdSecundaria) !== String(mesaId)) {
+        const seg = await escribir.mesaLibre(ctxDe(req), {
+          fecha, hora, duracion, mesaId: mesaIdSecundaria, excluirId: req.params.id,
+        });
+        if (!seg.libre) {
+          return res.status(409).json({
+            error: "mesa_secundaria_ocupada",
+            mensaje: seg.choca
+              ? `La mesa con la que quieres fusionar ya la tiene ${seg.choca} en ese horario.`
+              : "La mesa con la que quieres fusionar ya está ocupada en ese horario.",
+          });
+        }
+        cambios.mesa_id_secundaria = mesaIdSecundaria;
+      } else if (!mesaIdSecundaria) {
+        // Sin segunda mesa: el mismo margen de "una silla más" que ya usa el
+        // reparto automático. Antes esto no se comprobaba en absoluto — una
+        // mesa se podía editar para cualquier número de personas sin aviso.
+        const mesa = await db.obtener(ctxDe(req), MESAS, mesaId);
+        if (mesa && pax > mesa.capacidad) {
+          const hueco = pax - mesa.capacidad;
+          if (hueco > 1) {
+            return res.status(409).json({
+              error: "capacidad_insuficiente",
+              mensaje: `La mesa ${mesa.nombre} tiene ${mesa.capacidad} plazas y no llega para ${pax} personas. Fusiónala con otra mesa o elige una más grande.`,
+            });
+          }
+        }
+        cambios.mesa_id_secundaria = null;
       }
     }
   }

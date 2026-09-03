@@ -46,6 +46,8 @@ export interface Reservation {
   time: string; // HH:MM
   pax: number;
   tableId: string;
+  /** Segunda mesa, si el grupo no cabía en una sola y se fusionó con otra. */
+  secondaryTableId?: string;
   status: ReservationStatus;
   notes: string;
   allergies: string[];
