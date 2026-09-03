@@ -11,6 +11,39 @@ valor del registro está en poder mirar atrás y entender por qué algo es como 
 
 ---
 
+## Sesión 2026-09-03 · Agenda del día en la barra lateral del plano
+
+Se pidió un espacio bajo "Estado de Ocupación" con la lista de reservas del día:
+mesa, nombre, hora y personas, en modo lista y visualmente cuidado.
+
+**`AgendaDelDia.tsx`** (nuevo): tarjeta que enseña las reservas vivas del día
+seleccionado, ordenadas por hora. Cada fila tiene la hora, un punto de color
+(ámbar = reservada, rojo = en servicio, mismos colores que ya usa el resto del
+panel), el nombre del cliente, la mesa con icono, y las personas en una
+insignia. Un clic abre esa reserva para gestionarla — mismo callback
+`onEditReservation` que ya usan el plano y la agenda mensual, no un camino nuevo.
+
+Respeta el mismo filtro de turno que el plano (COMIDA / CENA / TODO): cambiar
+el turno arriba cambia también esta lista, para que ambos cuenten la misma
+historia. Estado vacío con mensaje si no hay nada ese día/turno. La lista se
+recorta con scroll interno cuando hay más filas de las que caben, sin empujar
+el resto del panel — probado con 10 reservas simultáneas.
+
+Se insertó en la barra lateral (`App.tsx`), como hermana de la tarjeta "Estado
+de Ocupación" dentro del mismo contenedor — se muestra en todas las pestañas,
+igual que esa tarjeta ya hacía.
+
+### Verificación (local, sin desplegar)
+
+En el navegador, con datos reales sembrados y luego borrados: la lista aparece
+con el conteo correcto, cambia con el selector de turno, un clic en una fila
+abre exactamente esa reserva con sus datos, el estado vacío se ve bien al
+cambiar a un día sin reservas, y con 10 filas el scroll interno funciona sin
+romper el layout. Typecheck y build limpios. Sin errores en consola.
+
+
+---
+
 ## Sesión 2026-09-02 (continuación) · Cierre del hueco de los 10
 
 Tras el arreglo de la silla extra quedó un hueco señalado: un grupo de **exactamente

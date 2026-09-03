@@ -13,6 +13,7 @@ import { MenuView } from './components/MenuView';
 import { CustomersView } from './components/CustomersView';
 import { SettingsView } from './components/SettingsView';
 import { LoginView } from './components/LoginView';
+import { AgendaDelDia } from './components/AgendaDelDia';
 import { 
   UtensilsCrossed, 
   Layers, 
@@ -1475,6 +1476,18 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
               Nueva Reserva Rápida
             </button>
           </div>
+
+          <AgendaDelDia
+            reservations={reservations}
+            tables={tables}
+            selectedDate={selectedDate}
+            selectedShift={selectedShift}
+            onEditReservation={(res) => {
+              setEditingReservation(res);
+              setSelectedTableId(res.tableId || null);
+              setIsBookingModalOpen(true);
+            }}
+          />
         </div>
 
         {/* Center: Main View Area (FloorPlan / CalendarView) (lg:span-9) */}
