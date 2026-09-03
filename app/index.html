@@ -1,15 +1,26 @@
 <!doctype html>
-<html lang="es" class="dark">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DineControl AI | Floor Plan & Reservas</title>
+    <!--
+      Aplica el tema guardado ANTES del primer pintado. Sin esto, la página
+      arrancaría siempre en oscuro (el data-theme lo pone React ya montado) y
+      quien eligió claro vería un parpadeo oscuro→claro en cada carga.
+    -->
+    <script>
+      (function () {
+        var guardado = localStorage.getItem('dinecontrol_theme');
+        if (guardado === 'light') document.documentElement.setAttribute('data-theme', 'light');
+      })();
+    </script>
     <!-- Google Fonts & Material Icons -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
   </head>
-  <body class="bg-[#0b1326] text-[#dae2fd]">
+  <body class="bg-[#0F0F10] text-[#f4f4f5]">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

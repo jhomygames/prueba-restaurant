@@ -11,6 +11,79 @@ valor del registro está en poder mirar atrás y entender por qué algo es como 
 
 ---
 
+## Sesión 2026-09-03 · Modo claro
+
+Se pidió un modo claro además del oscuro actual, en tonos hueso cálido — nunca
+blanco puro. Se planeó primero con una paleta de muestra (artefacto interactivo
+con las dos versiones lado a lado) antes de tocar código, y se aprobó tal cual.
+
+### El sistema ya estaba listo para esto
+
+Auditar `index.css` mostró que las 14 variables `--color-brand-*` cubren toda
+la app — ningún componente tiene un color de superficie o texto suelto fuera de
+ese sistema, salvo lo que debe ignorar el tema a propósito (el mockup de
+WhatsApp del simulador de mensajes, las insignias rojas de alerta, el fondo
+oscurecido de los modales). Un modo claro se resolvía redefiniendo esas mismas
+variables, sin tocar componentes uno a uno.
+
+**Colores nuevos** (`index.css`, bloque `html[data-theme="light"]`): rampa de
+seis superficies en hueso cálido, de `#EAE1D2` (suelo del plano) a `#FFFFFB`
+(máxima elevación) — el tono más claro sigue siendo un 99.6% blanco, nunca
+puro. El ámbar de marca (`#f59e0b`) y el rojo (`#ef4444`) se oscurecen a
+`#B45309` y `#B91C1C`: no es estético, es necesario — el ámbar se usa como
+color de TEXTO en más de 90 sitios de la app (iconos activos, pestañas,
+insignias) y sobre hueso claro el original cae a ~2:1 de contraste,
+ilegible. Los nuevos pasan el mínimo de accesibilidad AA (~4.8:1 y ~8.3:1).
+
+**De paso**, dos clases que el código ya usaba pero nunca se definieron
+(`brand-primary-hover` en el botón de subir foto de un plato,
+`brand-text-dim` en tres sitios de Configuración) quedaron definidas — antes
+no hacían nada.
+
+### El interruptor
+
+`index.html`: script bloqueante en `<head>`, antes de cualquier otra cosa, que
+lee `localStorage` y pone `data-theme="light"` en `<html>` si corresponde —
+sin esto habría un parpadeo oscuro→claro en cada carga para quien eligiera
+claro. Se quitó también `class="dark"` de `<html>`, vestigio sin uso (ningún
+componente usa el `dark:` de Tailwind).
+
+`App.tsx`: el estado del tema vive en el componente `App` de nivel superior, NO
+dentro de `Panel` — `Panel` se remonta con `key={session.restaurant.slug}` si
+se cambia de restaurante, y el tema es una preferencia del navegador, no del
+local; meterlo dentro de `Panel` lo habría reiniciado en cada remontaje.
+
+`SettingsView.tsx`: tarjeta "Apariencia" al final, junto a Cuenta — dos botones
+Sol/Luna con el mismo patrón segmentado que ya usa el selector de turno
+COMIDA/CENA/TODO. Por defecto sigue en oscuro; la elección se guarda en
+`localStorage` sin distinguir restaurante (es del navegador).
+
+### Un fallo de herramienta, no de código
+
+Probando en viewport móvil emulado, un botón salió gris oscuro cuando debía
+ser hueso casi blanco. La variable CSS real (`--color-brand-surface-high:
+#fffdf7`, comprobado leyendo la propiedad computada) estaba correcta — era
+Chrome, bajo emulación de Android, repintando la página con su heurística de
+"oscuro automático" para contenido sin `color-scheme` declarado. Se añadió
+`color-scheme: dark` / `light` junto a cada bloque de tokens, que le dice a
+cualquier navegador "esta página ya gestiona su propio tema, no lo adivines" —
+cierra esto para cualquier usuario real con esa opción del sistema activada,
+no solo para el emulador de pruebas.
+
+### Verificación (local, sin desplegar)
+
+Typecheck y build limpios. En el navegador, con sesión y datos reales: las
+ocho vistas (Plano, Agenda del Día, modal de reserva con el calendario
+vertical y sus alergias, Carta con 109 platos, Clientes, Calendario, Login,
+Configuración) revisadas en claro y sin un solo elemento ilegible. El
+interruptor confirmado en ambos sentidos (`data-theme` + `localStorage`
+correctos tras cada cambio), sin parpadeo al recargar con claro ya guardado, y
+el oscuro exactamente igual que antes de este cambio — ni un hex tocado. Sin
+errores en consola. Datos de prueba borrados.
+
+
+---
+
 ## Sesión 2026-09-03 · Agenda del día en la barra lateral del plano
 
 Se pidió un espacio bajo "Estado de Ocupación" con la lista de reservas del día:

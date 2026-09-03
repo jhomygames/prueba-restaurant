@@ -11,18 +11,70 @@
   --color-brand-surface-high: #1c1c1f;
   --color-brand-surface-highest: #2c2c30;
   --color-brand-surface-lowest: #080809;
-  
+
   --color-brand-primary: #f59e0b; /* Elegant Amber/Gold (Primary Brand Accent) */
+  --color-brand-primary-hover: #dc900b; /* Ámbar oscurecido para el hover de botones sólidos */
   --color-brand-secondary: #ef4444; /* Rose/Red (Occupied & Destructive/Alert) */
   --color-brand-tertiary: #f59e0b; /* Amber (Reserved) */
   --color-brand-text: #f4f4f5; /* Zinc-100 */
+  --color-brand-text-dim: #d4d4d8; /* Zinc-300 — texto secundario, entre text y muted */
   --color-brand-muted: #a1a1aa; /* Zinc-400 */
   --color-brand-outline: rgba(255, 255, 255, 0.05); /* Very subtle transparent borders */
 }
 
-/* Custom Grid Background styling */
+/**
+ * Modo claro — hueso cálido, nunca blanco puro.
+ *
+ * Tailwind genera las variables de arriba sobre `:root`; esta regla las
+ * redefine con más especificidad (elemento + atributo) para que gane siempre,
+ * sin depender del orden en que el build las emita. `data-theme` lo pone
+ * App.tsx en <html> al arrancar y al cambiar el interruptor de Configuración;
+ * el script bloqueante de index.html lo adelanta ANTES del primer pintado
+ * para que no haya parpadeo del tema equivocado.
+ *
+ * El ámbar y el rojo se oscurecen aquí a propósito, no por gusto: el ámbar de
+ * marca se usa como color de TEXTO en más de 90 sitios de la app (iconos
+ * activos, pestañas, insignias), y sobre hueso claro el #f59e0b original cae
+ * por debajo del contraste legible. #B45309 y #B91C1C sí lo cumplen.
+ */
+html[data-theme="light"] {
+  --color-brand-bg: #F7F2E7;
+  --color-brand-surface: #FDFAF3;
+  --color-brand-surface-low: #F2ECDF;
+  --color-brand-surface-high: #FFFDF7;
+  --color-brand-surface-highest: #FFFFFB;
+  --color-brand-surface-lowest: #EAE1D2;
+
+  --color-brand-primary: #B45309;
+  --color-brand-primary-hover: #96420A;
+  --color-brand-secondary: #B91C1C;
+  --color-brand-tertiary: #B45309;
+  --color-brand-text: #2A241D;
+  --color-brand-text-dim: #6B6255;
+  --color-brand-muted: #8A8072;
+  --color-brand-outline: rgba(66, 50, 20, 0.12);
+
+  --grid-dot: rgba(66, 50, 20, 0.08);
+  --scrollbar-track: #F2ECDF;
+  --scrollbar-thumb: rgba(66, 50, 20, 0.18);
+}
+
+/* Custom Grid Background styling (plano de mesas) */
+:root {
+  --grid-dot: rgba(255, 255, 255, 0.03);
+  --scrollbar-track: #101012;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.1);
+  /* Le dice al navegador "esta página ya gestiona su propio claro/oscuro":
+     sin esto, algunos navegadores (sobre todo Chrome en Android) repintan la
+     página con un "oscuro automático" heurístico que no respeta estos
+     tokens — cambia colores por su cuenta, sin tocar el CSS. */
+  color-scheme: dark;
+}
+html[data-theme="light"] {
+  color-scheme: light;
+}
 .grid-canvas {
-  background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
   background-size: 24px 24px;
 }
 
@@ -32,13 +84,12 @@
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #101012;
+  background: var(--scrollbar-track);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--scrollbar-thumb);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #f59e0b;
+  background: var(--color-brand-primary);
 }
-

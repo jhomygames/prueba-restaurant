@@ -13,6 +13,8 @@ import {
   RefreshCw,
   Globe,
   Unplug,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import * as api from '../api';
 import { RestaurantSettings } from '../api';
@@ -23,6 +25,8 @@ interface SettingsViewProps {
   onRestaurantRenamed: (nombre: string) => void;
   /** Para que el plano recargue los turnos en cuanto cambia el horario. */
   onHorarioGuardado?: () => void;
+  theme: 'dark' | 'light';
+  onThemeChange: (theme: 'dark' | 'light') => void;
 }
 
 type Estado = { tipo: 'ok' | 'error'; texto: string } | null;
@@ -102,7 +106,7 @@ const Aviso: React.FC<{ estado: Estado }> = ({ estado }) =>
     </div>
   ) : null;
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, onRestaurantRenamed, onHorarioGuardado }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, onRestaurantRenamed, onHorarioGuardado, theme, onThemeChange }) => {
   const [settings, setSettings] = useState<RestaurantSettings | null>(null);
   const [cargando, setCargando] = useState(true);
 
@@ -786,6 +790,38 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNotify, onRestaura
           )}
         </div>
         <Aviso estado={estadoInteg} />
+      </Tarjeta>
+
+      {/* --- Apariencia --- */}
+      <Tarjeta icono={<Sun className="w-4 h-4" />} titulo="Apariencia" subtitulo="Cómo se ve el panel en este navegador">
+        <div className="flex items-center justify-between p-2.5 bg-brand-surface-low border border-brand-outline rounded-xl">
+          <div>
+            <p className="text-xs font-sans font-bold text-brand-text">Tema</p>
+            <p className="text-[10px] text-brand-muted mt-0.5">Se guarda en este navegador, no afecta a otros dispositivos.</p>
+          </div>
+          <div className="flex gap-0.5 p-0.5 bg-brand-surface border border-brand-outline rounded-lg">
+            <button
+              type="button"
+              onClick={() => onThemeChange('dark')}
+              title="Modo oscuro"
+              className={`px-2.5 py-1.5 rounded-md text-[10px] font-mono font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                theme === 'dark' ? 'bg-brand-primary/20 text-brand-primary' : 'text-brand-muted hover:text-brand-text'
+              }`}
+            >
+              <Moon className="w-3.5 h-3.5" /> OSCURO
+            </button>
+            <button
+              type="button"
+              onClick={() => onThemeChange('light')}
+              title="Modo claro"
+              className={`px-2.5 py-1.5 rounded-md text-[10px] font-mono font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                theme === 'light' ? 'bg-brand-primary/20 text-brand-primary' : 'text-brand-muted hover:text-brand-text'
+              }`}
+            >
+              <Sun className="w-3.5 h-3.5" /> CLARO
+            </button>
+          </div>
+        </div>
       </Tarjeta>
 
       {/* --- Cuenta --- */}

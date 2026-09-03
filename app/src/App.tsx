@@ -43,7 +43,7 @@ import { motion, AnimatePresence } from 'motion/react';
 // Así las reservas creadas por el agente de voz o WhatsApp aparecen solas.
 const POLL_INTERVAL_MS = 20000;
 
-const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, onLogout }) => {
+const Panel: React.FC<{ session: Session; onLogout: () => void; theme: 'dark' | 'light'; onThemeChange: (t: 'dark' | 'light') => void }> = ({ session, onLogout, theme, onThemeChange }) => {
   // Claves de localStorage namespaceadas por local: dos restaurantes en el
   // mismo navegador no deben pisarse la decoración ni los ajustes.
   const ns = (k: string) => `dinecontrol_${session.restaurant.slug}_${k}`;
@@ -1558,6 +1558,8 @@ const Panel: React.FC<{ session: Session; onLogout: () => void }> = ({ session, 
                 onNotify={(titulo, msg) => addNotificationLog(titulo, msg, 'system')}
                 onRestaurantRenamed={setRestaurantName}
                 onHorarioGuardado={() => refreshFromServer(true)}
+                theme={theme}
+                onThemeChange={onThemeChange}
               />
             </div>
           )}
@@ -1612,6 +1614,25 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [comprobando, setComprobando] = useState(true);
 
+  /**
+   * Preferencia de tema. Vive AQUÍ, fuera de Panel, a propósito: Panel se
+   * remonta con key={session.restaurant.slug} si el usuario cambia de
+   * restaurante, y el tema es una preferencia del navegador, no del local —
+   * no debe reiniciarse en ese remontaje.
+   *
+   * El valor inicial ya lo decidió el script bloqueante de index.html (evita
+   * el parpadeo); aquí solo se lee lo mismo para que React y el DOM
+   * arranquen de acuerdo.
+   */
+  const [theme, setTheme] = useState<'dark' | 'light'>(() =>
+    localStorage.getItem('dinecontrol_theme') === 'light' ? 'light' : 'dark'
+  );
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('dinecontrol_theme', theme);
+  }, [theme]);
+
   useEffect(() => {
     // Si el backend devuelve 401 en cualquier momento, volvemos al login.
     api.setUnauthorizedHandler(() => setSession(null));
@@ -1649,5 +1670,13 @@ export default function App() {
     return <LoginView onLogin={setSession} />;
   }
 
-  return <Panel key={session.restaurant.slug} session={session} onLogout={handleLogout} />;
+  return (
+    <Panel
+      key={session.restaurant.slug}
+      session={session}
+      onLogout={handleLogout}
+      theme={theme}
+      onThemeChange={setTheme}
+    />
+  );
 }
