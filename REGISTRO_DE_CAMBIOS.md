@@ -11,6 +11,31 @@ valor del registro está en poder mirar atrás y entender por qué algo es como 
 
 ---
 
+## Sesión 2026-09-02 (continuación) · Cierre del hueco de los 10
+
+Tras el arreglo de la silla extra quedó un hueco señalado: un grupo de **exactamente
+10** no cabía físicamente (mesa de 8 + 1 silla = 9, no 10) pero tampoco disparaba
+`GRUPO_GRANDE`, que exigía *más de* 10. El restaurante eligió cerrarlo bajando el
+umbral a "10 o más" en vez de ampliar el margen de sillas.
+
+`GRUPO_GRANDE` en `agente.js`: `n > GRUPO_GRANDE` → `n >= GRUPO_GRANDE`. El mensaje
+que Marta dice se ajustó para seguir siendo cierto: *"para grupos de más de 10..."*
+pasó a *"para grupos de 10 personas o más..."*.
+
+Verificado con `scripts/test-silla-extra.js` (ampliado): 10 personas ya escala a
+humano y notifica al equipo (probado con `transferToHuman`), sin intentar guardar
+una reserva que iba a fallar. 9, 11 y un grupo normal de 4 se comprobó que no
+cambiaron. Las 44 comprobaciones de las tres sesiones anteriores siguen en verde.
+
+**Pendiente de decidir por el restaurante, no de este cambio**: nada. El hueco
+quedó cerrado con la opción 1 de las dos que se plantearon.
+
+**Sigue sin desplegarse**: quedan pendientes ajustes estéticos de la app antes de
+subir este commit junto con el de la silla extra.
+
+
+---
+
 ## Sesión 2026-09-02 · La llamada de los 9 del cumpleaños, y la silla que faltaba
 
 Se pidió verificar la llamada de Vapi `b8d57e4a-925b-48f9-97c2-e49c44ec30ae`. Ese

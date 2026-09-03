@@ -32,11 +32,14 @@ async function main() {
   const choque = await escribir.crearReserva(ctx, { fecha: F, hora: '21:00', personas: 9, nombre: 'ZZSILLA Choque', telefono: '', notas: '' });
   ok('se rechaza por falta de mesa', !choque.creada && choque.motivo === 'sin_mesa', choque.motivo);
 
-  console.log('\n10 personas (límite exacto, no ">10"): sigue sin caber ni con la silla:');
+  console.log('\n10 personas: sigue sin caber físicamente (8+1 silla = 9, no 10),');
+  console.log('pero ya no importa porque comprobarGrupo() la intercepta ANTES de buscar mesa:');
   const diez = await escribir.buscarMesaLibre(ctx, { fecha: F, hora: '13:00', personas: 10, duracion: 120 });
-  ok('10 personas NO encuentra mesa (gap conocido, ver informe)', diez === null, JSON.stringify(diez));
+  ok('buscarMesaLibre(10) sigue sin encontrar mesa (correcto, es físico)', diez === null, JSON.stringify(diez));
+  const grupoDiez = await agente._internos.comprobarGrupo(10);
+  ok('pero comprobarGrupo(10) ya escala a humano (umbral corregido a >=)', !grupoDiez.ok && grupoDiez.grupoGrande, JSON.stringify(grupoDiez));
 
-  console.log('\n11 personas: sigue yendo a un humano, sin tocar mesas (comportamiento ya correcto):');
+  console.log('\n11 personas: sigue yendo a un humano, sin tocar mesas (ya lo hacía antes):');
   const once = await agente._internos.comprobarGrupo(11);
   ok('11 personas dispara GRUPO_GRANDE', !once.ok && once.grupoGrande, JSON.stringify(once));
 

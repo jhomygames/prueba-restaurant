@@ -31,8 +31,11 @@ const DURACION_DEFECTO = 120;
 // poco. Estipulado con el restaurante: un grupo que no cabe en ninguna mesa
 // individual, pero le sobra sitio para una silla más en la mesa más cercana,
 // se sienta ahí en vez de negarle la reserva o pasarlo directo a un humano.
-// Los grupos de más de 10 siguen escalando (GRUPO_GRANDE en agente.js); esto
-// solo tapa el hueco justo debajo de ese umbral.
+// Los grupos de 10 o más siguen escalando (GRUPO_GRANDE en agente.js); esto
+// solo tapa el hueco justo debajo de ese umbral (hasta 9, con 8 de mesa +1 silla).
+// El umbral de GRUPO_GRANDE era ">" 10 al principio: un grupo de 10 exacto no
+// cabía aquí NI disparaba la escalada, y fallaba en silencio. Se corrigió a
+// ">=" para que este número no se quede sin cubrir por ninguna de las dos reglas.
 const SILLAS_EXTRA_MAX = 1;
 
 /**

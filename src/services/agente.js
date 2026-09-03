@@ -50,12 +50,15 @@ function interpretarFecha(valor, local) {
 function comprobarGrupo(personas) {
   const n = Number(personas);
   if (!n || n <= 0) return { ok: false, codigo: "PERSONAS_NO_VALIDAS", mensaje: "¿Para cuántas personas sería?" };
-  if (n > GRUPO_GRANDE) {
+  // >= y no >: la mesa más grande (8) más una silla llega a 9, así que un
+  // grupo de 10 exacto tampoco tiene sitio. Antes se colaba entre esta regla y
+  // la de la silla extra, y el sistema fallaba en silencio sin pasar a nadie.
+  if (n >= GRUPO_GRANDE) {
     return {
       ok: false,
       grupoGrande: true,
       codigo: "GRUPO_GRANDE",
-      mensaje: `Para grupos de más de ${GRUPO_GRANDE} personas te paso con el equipo, que lo organizan ellos directamente.`,
+      mensaje: `Para grupos de ${GRUPO_GRANDE} personas o más te paso con el equipo, que lo organizan ellos directamente.`,
     };
   }
   return { ok: true, personas: n };
