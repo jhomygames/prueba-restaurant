@@ -266,6 +266,14 @@ Reproducido el caso exacto del restaurante: mesa con comida a las 14:00–16:00.
   avisa: «De 20:30 a 22:30 choca con la reserva de ZZUI Cena (21:00–23:00)»
 - Sin errores en consola. Datos de prueba borrados.
 
+**Desplegado** el 2026-09-03 (commit `2c4f2e5`, junto con los tres cambios de la
+sesion anterior que quedaron esperando: la agenda vertical interactiva, la
+silla extra para grupos de 9, y el cierre del hueco de los 10). Verificado en
+produccion real: modo claro y vuelta a oscuro correctos en el plano y en
+Configuracion, mas los tres cambios anteriores reprobados por API (9 personas
+crea con silla, 10 personas va a humano, endpoint de horario responde). Cero
+residuos de prueba.
+
 **Desplegado** el 2026-08-20 (commit 3bac8a3). Verificado en produccion: dos pases
 en la misma mesa se crean (14:00-16:00 y 21:00-23:00), un tercero a las 22:00 se
 rechaza con "Esa mesa ya la tiene ZZPROD Cena en ese horario", y en el panel real
