@@ -725,15 +725,17 @@ const Panel: React.FC<{ session: Session; onLogout: () => void; theme: 'dark' | 
       }
     } catch (err: any) {
       console.error('saveReservation:', err);
-      // El servidor explica en castellano por qué no se pudo ("Esa mesa ya la
-      // tiene Alberto en ese horario", "A esa hora está cerrado..."). Antes se
-      // tapaba con un "revisa la conexión" que además era falso.
-      alert(err?.message || 'No se pudo guardar la reserva.');
       addNotificationLog(
         'Reserva no guardada',
         err?.message || 'No se pudo guardar la reserva.',
         'system'
       );
+      // El modal es quien tiene que decidir qué hacer con el fallo (quedarse
+      // abierto, enseñar el motivo real que dio el servidor junto al
+      // formulario) — por eso se relanza en vez de tragárselo aquí. Antes se
+      // cerraba la ventana igual y el aviso llegaba con el formulario ya
+      // desaparecido, sin sitio donde corregir nada.
+      throw err;
     }
   };
 

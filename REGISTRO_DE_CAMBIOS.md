@@ -95,6 +95,26 @@ se corrige sin que se pida.
 **Sin desplegar todavía.** No se tocaron las 2 reservas ficticias del
 restaurante ("Victor", "Ocupado") que quedaban de las pruebas de anoche.
 
+### El detalle que quedó anotado, ahora también arreglado
+
+El modal cerraba siempre al pulsar guardar, sin esperar la respuesta del
+servidor — si rechazaba la reserva, el aviso llegaba con el formulario ya
+cerrado, sin dónde corregir nada. Afectaba a los tres sitios que guardan (el
+botón principal, "Guardar y Sentar" y "Ocupar Mesa Ya").
+
+`App.tsx` ya no traga el error: lo relanza después de registrarlo en el
+historial de notificaciones, para que quien de verdad decide qué hacer con el
+fallo (el modal) lo reciba. `ReservationModal.tsx` espera esa respuesta antes
+de cerrar; si falla, el motivo real del servidor queda escrito junto al pie
+del formulario, con todos los datos que se habían rellenado intactos. Los tres
+botones se deshabilitan mientras se guarda, para no poder mandar la misma
+reserva dos veces de un doble clic.
+
+Verificado en el navegador forzando un rechazo real (mismo teléfono de
+relleno en dos reservas del mismo turno → "Ese cliente ya tiene una reserva
+ese mismo turno."): el modal se quedó abierto, el aviso apareció donde debía,
+y no quedó ninguna fila huérfana en la base.
+
 
 ---
 

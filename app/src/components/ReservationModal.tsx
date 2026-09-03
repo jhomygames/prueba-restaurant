@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Table, Reservation } from '../types';
 import type { Turno } from '../api';
 import { ALLERGIES_OPTIONS, AUTO_CONFIRM_TEMPLATES } from '../data';
-import { X, Calendar, Clock, User, Phone, Users, FileText, Check, AlertTriangle, MessageSquare, Send, BellRing, Sparkles, Link2 } from 'lucide-react';
+import { X, Calendar, Clock, User, Phone, Users, FileText, Check, AlertTriangle, MessageSquare, Send, BellRing, Sparkles, Link2, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TimelineMesa } from './TimelineMesa';
 import { estaViva, ocupaMesa, minutosDe } from '../turnos';
@@ -21,7 +21,14 @@ interface ReservationModalProps {
   defaultSeatedDuration: number;
   /** Día que se está mirando en el plano. Una reserva nueva nace ahí, no en hoy. */
   fechaPorDefecto: string;
-  onSaveReservation: (reservation: Omit<Reservation, 'id' | 'createdAt'> & { id?: string }) => void;
+  /**
+   * Devuelve una promesa que rechaza si el servidor no acepta la reserva
+   * (mesa ocupada, fuera de horario, capacidad insuficiente...). El modal
+   * espera esa respuesta antes de cerrarse — si falla, se queda abierto con
+   * el motivo real a la vista, en vez de cerrarse igual y dejar el aviso
+   * flotando sin formulario donde corregirlo.
+   */
+  onSaveReservation: (reservation: Omit<Reservation, 'id' | 'createdAt'> & { id?: string }) => Promise<void>;
   onCancelReservation: (id: string) => void;
   onSeatedReservation: (id: string) => void;
   onCompleteReservation: (id: string) => void;
@@ -60,6 +67,11 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
   const [selectedTemplate, setSelectedTemplate] = useState<string>('whatsapp_standard');
   const [simulatedSendSuccess, setSimulatedSendSuccess] = useState<boolean>(false);
 
+  // Guardado: mientras se espera al servidor no se cierra la ventana, y si
+  // rechaza la reserva el motivo se queda a la vista, junto al formulario.
+  const [guardando, setGuardando] = useState<boolean>(false);
+  const [errorGuardado, setErrorGuardado] = useState<string | null>(null);
+
   /**
    * Qué reserva se está gestionando AHORA. Empieza siendo la que traía el panel,
    * pero puede cambiar sin cerrar la ventana: la agenda deja saltar de una
@@ -82,7 +94,8 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
     if (isOpen) {
       setShowMsgSimulator(false);
       setSimulatedSendSuccess(false);
-      
+      setErrorGuardado(null);
+
       if (reservaActiva) {
         setCustomerName(reservaActiva.customerName);
         setCustomerPhone(reservaActiva.customerPhone);
@@ -170,28 +183,35 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
   // (p. ej. una reserva del calendario cuya mesa fue eliminada del plano).
   if (!isOpen || (!table && !reservaActiva)) return null;
 
-  const handleQuickSeating = () => {
-    if (!table) return;
+  const handleQuickSeating = async () => {
+    if (!table || guardando) return;
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
     const timeStr = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false });
-    
-    onSaveReservation({
-      customerName: 'Cliente de Paso',
-      customerPhone: '+56 9 1234 5678',
-      date: todayStr,
-      time: timeStr,
-      pax: table.seats, // Default to table capacity
-      tableId: table.id,
-      status: 'seated',
-      seatedAt: now.toISOString(),
-      notes: 'Ocupación rápida sin reserva previa',
-      allergies: [],
-      autoConfirmMessage: false,
-      customDurationMinutes: customDurationMinutes
-    });
-    
-    onClose();
+
+    setGuardando(true);
+    setErrorGuardado(null);
+    try {
+      await onSaveReservation({
+        customerName: 'Cliente de Paso',
+        customerPhone: '+56 9 1234 5678',
+        date: todayStr,
+        time: timeStr,
+        pax: table.seats, // Default to table capacity
+        tableId: table.id,
+        status: 'seated',
+        seatedAt: now.toISOString(),
+        notes: 'Ocupación rápida sin reserva previa',
+        allergies: [],
+        autoConfirmMessage: false,
+        customDurationMinutes: customDurationMinutes
+      });
+      onClose();
+    } catch (err: any) {
+      setErrorGuardado(err?.message || 'No se pudo ocupar la mesa.');
+    } finally {
+      setGuardando(false);
+    }
   };
 
   const toggleAllergy = (allergy: string) => {
@@ -200,27 +220,34 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
     );
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customerName.trim()) return;
+    if (!customerName.trim() || guardando) return;
 
-    onSaveReservation({
-      ...(reservaActiva ? { id: reservaActiva.id, seatedAt: reservaActiva.seatedAt } : {}),
-      customerName: customerName.trim(),
-      customerPhone: customerPhone.trim() || '+56 9 1234 5678',
-      date,
-      time,
-      pax,
-      tableId: mesaPrincipal ? mesaPrincipal.id : (reservaActiva?.tableId ?? ''),
-      secondaryTableId,
-      status: reservaActiva ? reservaActiva.status : 'confirmed',
-      notes: notes.trim(),
-      allergies,
-      autoConfirmMessage,
-      customDurationMinutes
-    });
-
-    onClose();
+    setGuardando(true);
+    setErrorGuardado(null);
+    try {
+      await onSaveReservation({
+        ...(reservaActiva ? { id: reservaActiva.id, seatedAt: reservaActiva.seatedAt } : {}),
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim() || '+56 9 1234 5678',
+        date,
+        time,
+        pax,
+        tableId: mesaPrincipal ? mesaPrincipal.id : (reservaActiva?.tableId ?? ''),
+        secondaryTableId,
+        status: reservaActiva ? reservaActiva.status : 'confirmed',
+        notes: notes.trim(),
+        allergies,
+        autoConfirmMessage,
+        customDurationMinutes
+      });
+      onClose();
+    } catch (err: any) {
+      setErrorGuardado(err?.message || 'No se pudo guardar la reserva.');
+    } finally {
+      setGuardando(false);
+    }
   };
 
   // Compile WhatsApp template string with live variables
@@ -292,8 +319,9 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
                   </div>
                   <button
                     type="button"
+                    disabled={guardando}
                     onClick={handleQuickSeating}
-                    className="w-full sm:w-auto bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-brand-surface font-sans font-bold text-xs px-4 py-2 rounded-lg flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/10 transition-all cursor-pointer whitespace-nowrap"
+                    className="w-full sm:w-auto bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-brand-surface font-sans font-bold text-xs px-4 py-2 rounded-lg flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/10 transition-all cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     ⚡ Ocupar Mesa Ya
                   </button>
@@ -554,7 +582,17 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
 
             {/* Form Footer / Quick Status Actions */}
             <div className="p-4 bg-brand-surface-low border-t border-brand-outline flex flex-wrap gap-3 shrink-0">
-              
+
+              {/* Motivo real del servidor si el guardado se rechazó. Se queda
+                  aquí, con el formulario todavía abierto, en vez de cerrarse
+                  la ventana y dejar el aviso flotando sin dónde corregirlo. */}
+              {errorGuardado && (
+                <div className="w-full flex items-start gap-2 bg-brand-secondary/10 border border-brand-secondary/30 text-brand-secondary p-2.5 rounded-lg text-xs">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{errorGuardado}</span>
+                </div>
+              )}
+
               {/* Existing Reservation Operations */}
               {reservaActiva && (
                 <div className="flex gap-2 w-full sm:w-auto border-b sm:border-b-0 sm:border-r border-brand-outline pb-3 sm:pb-0 pr-0 sm:pr-3 mb-1 sm:mb-0">
@@ -607,26 +645,36 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
                 {!reservaActiva && table && (
                   <button
                     type="button"
-                    onClick={() => {
+                    disabled={guardando}
+                    onClick={async () => {
+                      if (guardando) return;
                       const now = new Date();
-                      onSaveReservation({
-                        customerName: customerName.trim() || 'Cliente de Paso',
-                        customerPhone: customerPhone.trim() || '+56 9 1234 5678',
-                        date: date || now.toISOString().split('T')[0],
-                        time: time || now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false }),
-                        pax,
-                        tableId: table.id,
-                        secondaryTableId,
-                        status: 'seated',
-                        seatedAt: now.toISOString(),
-                        notes: notes.trim() || 'Ocupación directa',
-                        allergies,
-                        autoConfirmMessage: false,
-                        customDurationMinutes
-                      });
-                      onClose();
+                      setGuardando(true);
+                      setErrorGuardado(null);
+                      try {
+                        await onSaveReservation({
+                          customerName: customerName.trim() || 'Cliente de Paso',
+                          customerPhone: customerPhone.trim() || '+56 9 1234 5678',
+                          date: date || now.toISOString().split('T')[0],
+                          time: time || now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false }),
+                          pax,
+                          tableId: table.id,
+                          secondaryTableId,
+                          status: 'seated',
+                          seatedAt: now.toISOString(),
+                          notes: notes.trim() || 'Ocupación directa',
+                          allergies,
+                          autoConfirmMessage: false,
+                          customDurationMinutes
+                        });
+                        onClose();
+                      } catch (err: any) {
+                        setErrorGuardado(err?.message || 'No se pudo guardar la reserva.');
+                      } finally {
+                        setGuardando(false);
+                      }
                     }}
-                    className="bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 font-sans font-bold text-xs px-3.5 py-2 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                    className="bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 font-sans font-bold text-xs px-3.5 py-2 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     ⚡ Guardar y Sentar
                   </button>
@@ -634,10 +682,11 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
                 
                 <button
                   type="submit"
-                  className="bg-brand-primary text-brand-surface font-sans font-bold text-xs px-4 py-2 rounded-lg shadow-lg hover:bg-brand-primary/90 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                  disabled={guardando}
+                  className="bg-brand-primary text-brand-surface font-sans font-bold text-xs px-4 py-2 rounded-lg shadow-lg hover:bg-brand-primary/90 transition-all flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <Check className="w-4 h-4 stroke-[3]" />
-                  {reservaActiva ? 'Guardar Cambios' : 'Agendar Reserva'}
+                  {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4 stroke-[3]" />}
+                  {guardando ? 'Guardando…' : reservaActiva ? 'Guardar Cambios' : 'Agendar Reserva'}
                 </button>
               </div>
 
