@@ -1,5 +1,10 @@
 # Supabase como base principal
 
+> **HISTÓRICO (marcado el 2026-11-04).** Plan ejecutado: la app funciona
+> íntegramente sobre Supabase en producción desde el 2026-08-08 (commit
+> `b5e06de`). Se conserva como referencia de diseño; el estado vigente está en
+> `CLAUDE.md` y el detalle en `REGISTRO_DE_CAMBIOS.md`. No usar como plan activo.
+
 Objetivo: que Supabase sustituya a Airtable como base de datos de la app,
 manteniendo la estructura que la app necesita para funcionar.
 

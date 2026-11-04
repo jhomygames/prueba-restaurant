@@ -1,5 +1,9 @@
 # Plan de ejecución — Calendario de ocupación + Horario de servicio
 
+> **HISTÓRICO (marcado el 2026-11-04).** Ejecutado y desplegado; se conserva
+> solo como referencia. El estado vigente está en `CLAUDE.md` y el detalle en
+> `REGISTRO_DE_CAMBIOS.md`. No usar como plan activo.
+
 > **EJECUTADO el 2026-08-18.** Las seis fases están hechas y verificadas en local
 > (34 comprobaciones automáticas + repaso en navegador). Falta únicamente el
 > despliegue, a la espera del visto bueno. El detalle de lo que se hizo, los

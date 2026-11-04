@@ -136,6 +136,62 @@ async function main() {
   );
   const otraEnM2 = await crear({ time: "21:15", pax: 2, tableId: m2.id });
   comprobar("Mesa 2 vuelve a estar libre tras quitar la fusión", otraEnM2.status === 201, JSON.stringify(otraEnM2.cuerpo).slice(0, 150));
+
+  // ── Casos límite (PLAN 3.2) ────────────────────────────────────────────────
+
+  console.log("\nCaso límite: añadir por PATCH una fusión con una secundaria ya ocupada:");
+  // `otraEnM2` ocupa ahora m2 a las 21:15, solapando con `base` (21:00).
+  const patchChoca = await api(`/api/reservations/${base.cuerpo.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ pax: m1.capacidad + m2.capacidad, secondaryTableId: m2.id }),
+  });
+  comprobar(
+    "PATCH con secundaria ocupada se rechaza (mesa_secundaria_ocupada)",
+    patchChoca.status === 409 && patchChoca.cuerpo.error === "mesa_secundaria_ocupada",
+    `${patchChoca.status} ${JSON.stringify(patchChoca.cuerpo)}`
+  );
+  const trasChoca = (await api(`/api/reservations?date=${FECHA}`)).cuerpo.find((r) => r.id === base.cuerpo.id);
+  comprobar(
+    "el rechazo no deja la reserva a medias (sigue sin fusión y con sus personas)",
+    trasChoca && !trasChoca.secondaryTableId && Number(trasChoca.pax) === m1.capacidad,
+    JSON.stringify(trasChoca).slice(0, 200)
+  );
+
+  console.log("\nCaso límite: abrir la reserva fusionada desde su mesa SECUNDARIA:");
+  // El panel deriva la mesa principal de la reserva (no del clic). Lo que
+  // necesita del servidor es que la lista devuelva principal y secundaria bien.
+  const lista = (await api(`/api/reservations?date=${FECHA}`)).cuerpo;
+  const vista = Array.isArray(lista) ? lista.find((r) => r.id === fusion.cuerpo.id) : null;
+  comprobar(
+    "la lista devuelve tableId = principal y secondaryTableId = secundaria",
+    vista && String(vista.tableId) === String(m1.id) && String(vista.secondaryTableId) === String(m2.id),
+    JSON.stringify(vista).slice(0, 200)
+  );
+  // Guardar sin cambios desde el modal (abierto por la secundaria) reenvía la
+  // principal real: no debe chocar consigo misma ni perder ninguna de las dos.
+  const reguardar = await api(`/api/reservations/${fusion.cuerpo.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ time: "14:00", pax: quince, tableId: m1.id, secondaryTableId: m2.id }),
+  });
+  comprobar(
+    "re-guardar la fusión tal cual se acepta y conserva las dos mesas",
+    reguardar.status === 200 &&
+      String(reguardar.cuerpo.tableId) === String(m1.id) &&
+      String(reguardar.cuerpo.secondaryTableId) === String(m2.id),
+    `${reguardar.status} ${JSON.stringify(reguardar.cuerpo).slice(0, 200)}`
+  );
+  // El fallo que se arregló en el panel: mandar la secundaria como principal.
+  // El servidor tampoco debería aceptar una reserva "Mesa 4 + Mesa 4".
+  const robada = await api(`/api/reservations/${fusion.cuerpo.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ time: "14:00", pax: quince, tableId: m2.id, secondaryTableId: m2.id }),
+  });
+  const trasRobo = (await api(`/api/reservations?date=${FECHA}`)).cuerpo.find((r) => r.id === fusion.cuerpo.id);
+  comprobar(
+    "principal y secundaria nunca acaban siendo la misma mesa",
+    trasRobo && String(trasRobo.tableId) !== String(trasRobo.secondaryTableId || ""),
+    `${robada.status} ${JSON.stringify(trasRobo).slice(0, 200)}`
+  );
 }
 
 async function limpiar() {

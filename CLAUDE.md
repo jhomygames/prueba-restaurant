@@ -19,7 +19,29 @@ con dos canales que comparten el mismo backend y las mismas herramientas:
 > **Al terminar cada sesión de trabajo hay que añadir ahí un bloque nuevo**,
 > con el comando `/registroupd` (ver `.claude/commands/registroupd.md`).
 
-## Decisiones tomadas (no volver a preguntar esto)
+## Estado vigente (actualizado 2026-11-04) — manda sobre todo lo de abajo
+
+- **En producción**: El Rincón Venezolano (slug `el-sazon-venezolano`). Backend + panel en
+  **Railway** (despliega solo desde `main`; repo `github.com/jhomygames/prueba-restaurant`).
+- **Base de datos: Supabase** (desde el 2026-08-08, commit `b5e06de`). Toda la app (panel,
+  login, agente de voz, escritura, notificaciones) va sobre Supabase vía
+  `src/services/supabaseClient.js` (tenant obligatorio en cada consulta) y `src/services/repo/`
+  (`escribir.js` = disponibilidad/alta/modificación). **Airtable queda retirado**: todo lo que
+  se cuenta de Airtable más abajo es histórico. Excepción conocida: `whatsapp.js` e
+  `integrations.js` aún usan `registry.js`/`toolDispatcher.js` (Airtable); WhatsApp lo lleva n8n.
+- **Voz**: asistente de Vapi «Marta» del restaurante (`e05a8f76-…`), herramientas apuntando a
+  `/vapi/tools` desde el 2026-08-09. Grupos de 10+ se escalan a un humano.
+- **Unir mesas** (2026-09-03): columna `reservas.mesa_id_secundaria` (bigint, nullable); solo
+  desde el panel, la voz nunca fusiona. Pruebas: `scripts/test-fusion-mesas.js`.
+- **Pruebas**: `scripts/test-*.js`. Las de API (`fusion-mesas`, `patch-reserva`, `turnos-api`)
+  necesitan el servidor en `PORT=3111` y `TEST_PASSWORD`; escriben en la base real con fecha
+  2099 y se limpian solas.
+- **Pendiente de seguridad (aplazado por Jhomar)**: rotar la `service_role` de Supabase y RLS en
+  `whatsapp_chat_historial` (ver `docs/PLAN.md` Fase 2).
+- Plan activo: `docs/PLAN.md`. Historial: `REGISTRO_DE_CAMBIOS.md`. `PLAN_SUPABASE_PRINCIPAL.md`
+  y `PLAN_AGENDA_Y_HORARIOS.md` son históricos.
+
+## Decisiones tomadas (histórico, hasta 2026-07; ver «Estado vigente» arriba)
 
 - **Sistema de reservas (actualizado 2026-07-08)**: se descartó Covermanager/TheFork para
   la fase de sandbox. Ahora `src/services/reservations.js` y `src/services/customerMemory.js`
@@ -162,7 +184,7 @@ con dos canales que comparten el mismo backend y las mismas herramientas:
   a mano. Pendiente: pegarlas en el `.env` real (nunca committear ese archivo).
 - **Hosting del backend**: aún no desplegado. Candidatos: Railway o Render.
 
-## Estado actual de la infraestructura
+## Estado de la infraestructura (histórico de julio 2026: superado, ver «Estado vigente»)
 
 ### Ya ejecutado (por Claude vía Make API, cuenta ya conectada del usuario)
 | Recurso | ID | Estado |
