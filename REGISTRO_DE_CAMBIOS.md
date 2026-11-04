@@ -11,6 +11,24 @@ valor del registro está en poder mirar atrás y entender por qué algo es como 
 
 ---
 
+## Sesión 2026-11-05 · Despliegue de unir mesas y verificación en local
+
+- **Subido a `origin/main`** (`c2d36f8..474c211`): unir mesas (`211c59d`), modal que espera
+  al servidor (`5e24848`) y la documentación (`474c211`). Railway no se pudo comprobar: el
+  plan está sin renovar, así que el despliegue queda pendiente de que se renueve.
+- **Verificado en local** (puerto 3111, base real de Supabase): lint y build limpios; suites
+  `dialecto-marta`, `fecha-hablada`, `silla-extra`, `solapes` y `thefork-parser` en verde.
+  Reserva de prueba de 9 personas el 2099-01-07: el panel ofreció fusionar, guardó
+  `mesa_id=2` + `mesa_id_secundaria=6`, el modal se cerró al confirmar el servidor, y la
+  reserva (id 257) se anuló al terminar.
+- **Producción**: la columna `reservas.mesa_id_secundaria` existe. «Victor» y «Ocupado» ya
+  estaban en `cancelled`; no se borraron.
+- **Pendiente**: `fusion-mesas`, `patch-reserva` y `turnos-api` (piden `TEST_PASSWORD`);
+  `patch-reserva` además cerró con un error interno de Node en Windows; el rechazo con el
+  modal abierto no se probó; renovar Railway y verificar allí.
+
+---
+
 ## Sesión 2026-09-03 (continuación) · Unir mesas
 
 El restaurante probó anoche crear 2 reservas ficticias para un grupo de 9,
